@@ -17,6 +17,7 @@ ARG REACT_APP_API_URL=http://localhost:8000
 
 # 環境変数を設定
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
+ENV GENERATE_SOURCEMAP=false
 
 # ビルド
 RUN npm run build

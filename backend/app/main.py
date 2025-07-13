@@ -94,6 +94,11 @@ async def get_status():
 async def health_check():
     return {"status": "ok", "timestamp": asyncio.get_event_loop().time()}
 
+@app.get("/health")
+async def health():
+    """Cloud Run用のヘルスチェックエンドポイント"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
 # WebSocketエンドポイント
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

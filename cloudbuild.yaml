@@ -1,0 +1,52 @@
+steps:
+  # バックエンドのビルド
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/bybitbot-backend:$COMMIT_SHA', './backend']
+    
+  # フロントエンドのビルド
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/bybitbot-frontend:$COMMIT_SHA', './frontend']
+    
+  # バックエンドをプッシュ
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/bybitbot-backend:$COMMIT_SHA']
+    
+  # フロントエンドをプッシュ
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/bybitbot-frontend:$COMMIT_SHA']
+    
+  # Cloud Runにデプロイ - バックエンド
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'bybitbot-backend'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/bybitbot-backend:$COMMIT_SHA'
+      - '--region'
+      - 'asia-northeast1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'ENCRYPTION_KEY=ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg='
+      
+  # Cloud Runにデプロイ - フロントエンド
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'bybitbot-frontend'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/bybitbot-frontend:$COMMIT_SHA'
+      - '--region'
+      - 'asia-northeast1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/$PROJECT_ID/bybitbot-backend:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/bybitbot-frontend:$COMMIT_SHA'

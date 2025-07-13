@@ -39,10 +39,10 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to initialize Bybit client: {e}")
 
-# CORS設定
+# CORS設定（Cloud Run用に更新）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://127.0.0.1:3000"],
+    allow_origins=["*"],  # 全オリジンを許可（本番環境では特定のドメインのみにすることを推奨）
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

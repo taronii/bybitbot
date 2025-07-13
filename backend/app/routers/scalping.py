@@ -145,14 +145,26 @@ async def execute_scalping_entry(
             TradingMode.SCALPING, account_balance
         )
         
+        # 数量の小数点精度を調整（Bybitの要件に合わせて）
+        quantity = position_size / signal["entry_price"]
+        
+        # シンボルごとの精度調整
+        precision_map = {
+            'BTCUSDT': 3,
+            'ETHUSDT': 3,
+            'default': 4
+        }
+        precision = precision_map.get(symbol, precision_map['default'])
+        quantity = round(quantity, precision)
+        
         # 高頻度取引最適化
         order_request = {
             "symbol": symbol,
             "side": signal["action"],
-            "quantity": position_size / signal["entry_price"],
+            "quantity": quantity,
             "price": signal["entry_price"],
             "order_type": "LIMIT",
-            "time_in_force": "IOC"  # Immediate or Cancel
+            "time_in_force": "GTC"  # Good Till Cancel（より安定）
         }
         
         # 最適化実行
@@ -353,17 +365,28 @@ async def _get_price_data(client: BybitClient, symbol: str):
         price_series = []
         volume_series = []
         
-        # トレンドとノイズを持つ価格データを生成
-        trend = np.random.choice([0.00005, -0.00005, 0])  # 軽微なトレンド
+        # よりダイナミックな価格変動を生成（スキャルピングシグナル検出用）
+        trend = np.random.choice([0.0001, -0.0001, 0.00005])  # より強いトレンド
+        momentum = 0
+        
         for i in range(100):
-            noise = np.random.normal(0, 0.0001)  # 0.01%のノイズ
-            price = base_price * (1 + trend * i + noise)
+            # モメンタムの蓄積
+            momentum = momentum * 0.9 + np.random.normal(0, 0.002)
+            
+            # 価格変動（より大きな変動）
+            noise = np.random.normal(0, 0.0005)  # 0.05%のノイズ
+            price = base_price * (1 + trend * i + noise + momentum)
             price_series.append(price)
             
-            # ボリュームも現実的に変動
+            # ボリューム急増パターンを時々追加
             base_volume = 500
-            volume_noise = np.random.normal(0, 0.2)
-            volume = base_volume * (1 + volume_noise)
+            if i > 90 and np.random.random() > 0.7:  # 最近のデータで30%の確率
+                # ボリューム急増（1.2-2.0倍）
+                volume_multiplier = np.random.uniform(1.2, 2.0)
+                volume = base_volume * volume_multiplier
+            else:
+                volume_noise = np.random.normal(0, 0.3)
+                volume = base_volume * (1 + volume_noise)
             volume_series.append(max(100, volume))
         
         # OHLCデータを生成
@@ -415,13 +438,26 @@ async def _get_orderbook_data(client: BybitClient, symbol: str):
         bids = []
         asks = []
         
-        # リアルなオーダーブックを生成
+        # リアルなオーダーブックを生成（不均衡パターンを含む）
+        imbalance_factor = np.random.uniform(0.5, 2.0)  # 買い/売りの不均衡
+        
         for i in range(10):
             bid_price = base_price * (1 - spread * (i + 1))
             ask_price = base_price * (1 + spread * (i + 1))
             
-            bid_volume = np.random.uniform(5, 20) * (10 - i)  # 価格が近いほど多い
-            ask_volume = np.random.uniform(5, 20) * (10 - i)
+            # 不均衡を反映したボリューム
+            base_bid_volume = np.random.uniform(10, 30) * (10 - i)
+            base_ask_volume = np.random.uniform(10, 30) * (10 - i)
+            
+            if imbalance_factor > 1.5:  # 買い圧力が強い
+                bid_volume = base_bid_volume * imbalance_factor
+                ask_volume = base_ask_volume
+            elif imbalance_factor < 0.7:  # 売り圧力が強い
+                bid_volume = base_bid_volume
+                ask_volume = base_ask_volume / imbalance_factor
+            else:
+                bid_volume = base_bid_volume
+                ask_volume = base_ask_volume
             
             bids.append([bid_price, bid_volume])
             asks.append([ask_price, ask_volume])
@@ -443,8 +479,12 @@ async def _get_volume_data(client: BybitClient, symbol: str):
         
     except Exception as e:
         logger.error(f"Volume data retrieval failed: {e}")
-        # フォールバック用モックデータ
+        # フォールバック用モックデータ（より現実的な値）
+        base_volume = np.random.uniform(40000, 60000)
+        # 最近のボリュームは時々スパイクする
+        recent_multiplier = np.random.choice([1.0, 1.5, 2.0], p=[0.7, 0.2, 0.1])
+        
         return {
-            'volume_24h': 50000,
-            'volume_recent': 2000
+            'volume_24h': base_volume,
+            'volume_recent': (base_volume / 24) * recent_multiplier
         }

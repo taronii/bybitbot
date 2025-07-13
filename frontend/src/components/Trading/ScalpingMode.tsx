@@ -98,12 +98,14 @@ interface OptimizationSuggestion {
 
 const ScalpingMode: React.FC = () => {
   const [scalpingEnabled, setScalpingEnabled] = useState(false);
+  const [autoTradeEnabled, setAutoTradeEnabled] = useState(false); // 自動取引フラグ
   const [loading, setLoading] = useState(false);
   const [signals, setSignals] = useState<Record<string, ScalpingSignal | null>>({});
   const [performance, setPerformance] = useState<PerformanceSummary | null>(null);
   const [suggestions, setSuggestions] = useState<OptimizationSuggestion[]>([]);
   const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set(['BTCUSDT']));
   const [alerts, setAlerts] = useState<Array<{ message: string; type: 'success' | 'error' | 'warning' }>>([]);
+  const [executedSignals, setExecutedSignals] = useState<Set<string>>(new Set()); // 実行済みシグナル追跡
 
   // スキャルピング対象シンボル（高流動性銘柄）
   const scalpingSymbols = [
@@ -213,29 +215,20 @@ const ScalpingMode: React.FC = () => {
     console.log('Executing scalping entry for', symbol, signal); // デバッグ用
     
     try {
-      const response = await apiService.post('/api/trading/execute-entry', {
+      const response = await apiService.post('/api/trading/scalping/execute', {
         symbol: symbol,
-        signal: {
-          action: signal.action,
-          confidence: signal.confidence,
-          entry_type: 'SCALPING',
-          entry_price: signal.entry_price,
-          position_size_multiplier: signal.position_size_multiplier,
-          reasons: signal.entry_reasons,
-          invalidation_price: signal.invalidation_price,
-          stop_loss: signal.stop_loss,
-          take_profit: signal.take_profit,
-          metadata: signal.metadata
-        }
+        signal: signal  // シグナル全体を送信
       });
       
       console.log('Execute response:', response); // デバッグ用
       
-      const data = response.data as { result: { executed: boolean; error?: string } };
-      if (data.result.executed) {
+      const data = response.data as { success: boolean; error?: string };
+      if (data.success) {
         addAlert(`${symbol} スキャルピングエントリーが実行されました`, 'success');
+        // 実行済みシグナルとして記録
+        setExecutedSignals(prev => new Set(prev).add(`${symbol}-${signal.metadata.timestamp}`));
       } else {
-        addAlert(`${symbol} エントリー失敗: ${data.result.error}`, 'error');
+        addAlert(`${symbol} エントリー失敗: ${data.error}`, 'error');
       }
     } catch (error) {
       console.error('Failed to execute scalping entry:', error);
@@ -270,6 +263,42 @@ const ScalpingMode: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // 自動実行機能
+  useEffect(() => {
+    if (!autoTradeEnabled || !scalpingEnabled) return;
+
+    const autoExecuteInterval = setInterval(() => {
+      // 各シグナルをチェックして自動実行
+      Object.entries(signals).forEach(([symbol, signal]) => {
+        if (signal && signal.action !== 'WAIT' && signal.confidence >= 0.45) {
+          const signalKey = `${symbol}-${signal.metadata.timestamp}`;
+          // まだ実行されていないシグナルのみ実行
+          if (!executedSignals.has(signalKey)) {
+            console.log(`Auto-executing scalping for ${symbol}`, signal);
+            executeScalpingEntry(symbol, signal);
+          }
+        }
+      });
+    }, 5000); // 5秒ごとにチェック
+
+    return () => clearInterval(autoExecuteInterval);
+  }, [autoTradeEnabled, scalpingEnabled, signals, executedSignals]);
+
+  // シグナル自動取得
+  useEffect(() => {
+    if (!scalpingEnabled) return;
+
+    // 初回取得
+    fetchScalpingSignals();
+
+    // 定期的に更新
+    const signalInterval = setInterval(() => {
+      fetchScalpingSignals();
+    }, 10000); // 10秒ごとに短縮
+
+    return () => clearInterval(signalInterval);
+  }, [scalpingEnabled, selectedSymbols]);
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
@@ -297,17 +326,35 @@ const ScalpingMode: React.FC = () => {
                 高頻度取引（1日20-50回、勝率70%以上を目指す）
               </Typography>
             </Box>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={scalpingEnabled}
-                  onChange={toggleScalpingMode}
-                  color="primary"
-                />
-              }
-              label={scalpingEnabled ? '起動中' : '停止中'}
-            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={scalpingEnabled}
+                    onChange={toggleScalpingMode}
+                    color="primary"
+                  />
+                }
+                label={scalpingEnabled ? '起動中' : '停止中'}
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={autoTradeEnabled}
+                    onChange={(e) => setAutoTradeEnabled(e.target.checked)}
+                    color="secondary"
+                    disabled={!scalpingEnabled}
+                  />
+                }
+                label={autoTradeEnabled ? '自動実行ON' : '自動実行OFF'}
+              />
+            </Box>
           </Box>
+          {autoTradeEnabled && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              自動実行モード: 信頼度45%以上のシグナルを自動的に実行します
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
@@ -418,16 +465,16 @@ const ScalpingMode: React.FC = () => {
                           <TableCell>${signal.entry_price.toFixed(2)}</TableCell>
                           <TableCell>1:{signal.risk_reward_ratio.toFixed(1)}</TableCell>
                           <TableCell>
-                            {signal.action !== 'WAIT' && signal.confidence > 0.75 ? (
+                            {signal.action !== 'WAIT' && signal.confidence >= 0.45 ? (
                               <Button
                                 size="small"
                                 variant="contained"
                                 color={signal.action === 'BUY' ? 'success' : 'error'}
                                 onClick={() => executeScalpingEntry(symbol, signal)}
-                                disabled={!scalpingEnabled}
+                                disabled={!scalpingEnabled || autoTradeEnabled}
                                 startIcon={<FlashOnIcon />}
                               >
-                                実行
+                                {autoTradeEnabled ? '自動' : '実行'}
                               </Button>
                             ) : (
                               <Typography variant="body2" color="textSecondary">

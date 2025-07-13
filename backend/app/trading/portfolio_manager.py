@@ -30,11 +30,11 @@ class PortfolioPosition:
 @dataclass
 class PortfolioSettings:
     """ポートフォリオ設定"""
-    max_concurrent_positions: int = 10  # 本番用：同時ポジション数を制限
-    max_position_per_symbol: int = 1  # 本番用：同一通貨で1ポジションまで
-    max_portfolio_risk: float = 0.05  # 本番用：5%に制限
-    max_single_position_risk: float = 0.01  # 本番用：1%に制限
-    max_correlation_positions: int = 2  # 本番用：相関通貨を2まで
+    max_concurrent_positions: int = 15  # 本番用：15ポジションまで拡張
+    max_position_per_symbol: int = 2  # 本番用：同一通貨で2ポジションまで
+    max_portfolio_risk: float = 0.10  # 本番用：10%に拡張（より多くのポジションを保有可能）
+    max_single_position_risk: float = 0.008  # 本番用：0.8%に調整（15ポジション時のバランス）
+    max_correlation_positions: int = 3  # 本番用：相関通貨を3まで
     rebalance_interval_minutes: int = 60
     
 class PortfolioManager:

@@ -408,31 +408,67 @@ class HighFrequencyOptimizer:
         order_request: Dict, 
         timeout: float = 5.0
     ) -> Dict:
-        """注文リクエスト送信（モック実装）"""
+        """注文リクエスト送信（実装版）"""
         try:
-            # ネットワークレイテンシシミュレーション
-            network_delay = np.random.uniform(0.01, 0.05)  # 10-50ms
-            await asyncio.sleep(network_delay)
+            from ...services.bybit_client import get_bybit_client
+            client = get_bybit_client()
             
-            # 成功率シミュレーション（95%）
-            success = np.random.random() < 0.95
+            if not client:
+                logger.error("Bybit client not initialized")
+                return {'success': False, 'error': 'Bybit client not initialized'}
             
-            if success:
-                return {
-                    'success': True,
-                    'order_id': f"order_{int(time.time() * 1000)}",
-                    'filled_quantity': order_request.get('quantity', 0),
-                    'avg_price': order_request.get('price', 0),
-                    'network_latency': network_delay * 1000  # ms
-                }
-            else:
+            start_time = time.time()
+            
+            # 注文パラメータの準備
+            order_params = {
+                "category": "linear",  # USDT perpetual
+                "symbol": order_request.get('symbol'),
+                "side": "Buy" if order_request.get('side') == 'BUY' else "Sell",
+                "orderType": order_request.get('order_type', 'Limit'),
+                "qty": str(order_request.get('quantity')),
+                "price": str(order_request.get('price')),
+                "timeInForce": order_request.get('time_in_force', 'GTC'),
+                "positionIdx": 0,  # ワンウェイモード
+                "reduceOnly": False
+            }
+            
+            logger.info(f"Sending order to Bybit: {order_params}")
+            
+            # 実際の注文送信
+            try:
+                response = client.session.place_order(**order_params)
+                network_latency = (time.time() - start_time) * 1000  # ms
+                
+                if response.get('retCode') == 0:
+                    result_data = response.get('result', {})
+                    return {
+                        'success': True,
+                        'order_id': result_data.get('orderId'),
+                        'filled_quantity': float(result_data.get('qty', 0)),
+                        'avg_price': float(result_data.get('price', order_request.get('price'))),
+                        'network_latency': network_latency,
+                        'response': response
+                    }
+                else:
+                    error_msg = response.get('retMsg', 'Unknown error')
+                    logger.error(f"Order failed: {error_msg}")
+                    return {
+                        'success': False,
+                        'error': error_msg,
+                        'network_latency': network_latency,
+                        'response': response
+                    }
+                    
+            except Exception as api_error:
+                logger.error(f"Bybit API error: {api_error}")
                 return {
                     'success': False,
-                    'error': 'Order rejected by exchange',
-                    'network_latency': network_delay * 1000
+                    'error': f"API error: {str(api_error)}",
+                    'network_latency': (time.time() - start_time) * 1000
                 }
                 
         except Exception as e:
+            logger.error(f"Order request failed: {e}")
             return {'success': False, 'error': str(e)}
     
     async def _process_order_batch(self) -> Dict:

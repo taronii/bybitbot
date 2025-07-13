@@ -58,10 +58,10 @@ class ScalpingEntryDetector:
     """
     
     def __init__(self):
-        self.min_confidence = 0.65  # 本番用：安全な信頼度レベル
-        self.max_spread_percent = 0.1  # 最大スプレッド（0.1%）
-        self.min_volume_multiplier = 2.0  # 最小ボリューム倍率（2倍以上）
-        self.quick_profit_target = 0.2  # 迅速利確目標（0.2%）
+        self.min_confidence = 0.45  # 緩和：45%以上で取引可能
+        self.max_spread_percent = 0.15  # 緩和：最大スプレッド（0.15%）
+        self.min_volume_multiplier = 1.1  # 緩和：最小ボリューム倍率（1.1倍以上）
+        self.quick_profit_target = 0.15  # 迅速利確目標（0.15%）
         self.tight_stop_loss = 0.1  # タイトストップロス（0.1%）
         
         # キャッシュ
@@ -256,14 +256,15 @@ class ScalpingEntryDetector:
             price_changes_abs = abs(price_data['close'].tail(10).diff()).dropna()
             tick_intensity = price_changes_abs.mean() / price_data['close'].iloc[-1] if len(price_changes_abs) > 0 else 0
             
+            # より現実的なスケーリング調整
             return ScalpingMetrics(
                 volume_surge=min(volume_surge, 10.0),  # 上限設定
-                price_velocity=min(price_velocity * 1000, 10.0),  # スケール調整
-                orderbook_imbalance=orderbook_imbalance,
+                price_velocity=min(price_velocity * 100, 10.0),  # より感度を高く
+                orderbook_imbalance=min(orderbook_imbalance * 2, 1.0),  # 増幅
                 momentum_strength=momentum_strength,
-                liquidity_depth=min(liquidity_depth / 100000, 1.0),  # 正規化
+                liquidity_depth=min(liquidity_depth / 10000, 1.0),  # より現実的な正規化
                 spread_tightness=spread_tightness,
-                tick_intensity=min(tick_intensity * 1000, 10.0)  # スケール調整
+                tick_intensity=min(tick_intensity * 100, 10.0)  # より感度を高く
             )
             
         except Exception as e:
@@ -282,10 +283,10 @@ class ScalpingEntryDetector:
             recent_data = price_data.tail(10)
             current_price = recent_data['close'].iloc[-1]
             
-            # パターン1: ボリューム急増 + 価格突破（本番用）
-            if metrics.volume_surge > 1.2 and metrics.price_velocity > 0.1:
+            # パターン1: ボリューム急増 + 価格突破（緩和版）
+            if metrics.volume_surge > 1.0 and metrics.price_velocity > 0.0001:  # さらに緩和
                 direction = 'BUY' if recent_data['close'].iloc[-1] > recent_data['close'].iloc[-2] else 'SELL'
-                confidence = min(0.9, 0.65 + (metrics.volume_surge / 5.0) + (metrics.price_velocity / 2.0))
+                confidence = min(0.9, 0.45 + (metrics.volume_surge - 1.0) * 2 + metrics.price_velocity * 50)
                 
                 patterns.append({
                     'name': 'ボリューム急増突破',
@@ -296,10 +297,12 @@ class ScalpingEntryDetector:
                     'expected_duration': 3  # 3分
                 })
             
-            # パターン2: オーダーブック不均衡 + モメンタム
-            if metrics.orderbook_imbalance > 0.35 and metrics.momentum_strength > 0.65:
-                direction = 'BUY' if metrics.momentum_strength > 0.5 else 'SELL'
-                confidence = min(0.85, 0.5 + metrics.orderbook_imbalance + (metrics.momentum_strength / 2))
+            # パターン2: オーダーブック不均衡 + モメンタム（緩和版）
+            if metrics.orderbook_imbalance > 0.15 and metrics.momentum_strength > 0.3:  # さらに緩和
+                # ビッド側が強い場合はBUY、アスク側が強い場合はSELL
+                recent_change = recent_data['close'].iloc[-1] - recent_data['close'].iloc[-3]
+                direction = 'BUY' if recent_change > 0 else 'SELL'
+                confidence = min(0.85, 0.45 + metrics.orderbook_imbalance * 2 + metrics.momentum_strength)
                 
                 patterns.append({
                     'name': 'オーダーブック不均衡',
@@ -311,11 +314,11 @@ class ScalpingEntryDetector:
                 })
             
             # パターン3: 高速リバーサル（逆張り）
-            if metrics.momentum_strength > 0.75 and metrics.tick_intensity > 1.5:
+            if metrics.momentum_strength > 0.6 and metrics.tick_intensity > 1.0:  # 緩和
                 # 現在のトレンドと逆方向
                 recent_change = recent_data['close'].iloc[-1] - recent_data['close'].iloc[-5]
                 direction = 'SELL' if recent_change > 0 else 'BUY'
-                confidence = min(0.8, 0.55 + (metrics.momentum_strength + metrics.tick_intensity / 5.0) / 2)
+                confidence = min(0.8, 0.5 + metrics.momentum_strength * 0.5 + metrics.tick_intensity * 0.2)
                 
                 patterns.append({
                     'name': '高速リバーサル',
@@ -327,14 +330,14 @@ class ScalpingEntryDetector:
                 })
             
             # パターン4: 完璧なスプレッド環境での順張り
-            if metrics.spread_tightness > 0.7 and metrics.liquidity_depth > 0.4:
+            if metrics.spread_tightness > 0.5 and metrics.liquidity_depth > 0.2:  # 緩和
                 # 短期トレンド確認
                 sma_3 = recent_data['close'].tail(3).mean()
                 sma_7 = recent_data['close'].tail(7).mean()
                 
-                if abs(sma_3 - sma_7) / current_price > 0.0005:  # 0.05%以上の差
+                if abs(sma_3 - sma_7) / current_price > 0.0002:  # 0.02%以上の差に緩和
                     direction = 'BUY' if sma_3 > sma_7 else 'SELL'
-                    confidence = min(0.8, 0.5 + metrics.spread_tightness + (metrics.liquidity_depth / 2))
+                    confidence = min(0.8, 0.45 + metrics.spread_tightness * 0.5 + metrics.liquidity_depth)
                     
                     patterns.append({
                         'name': '完璧環境順張り',

@@ -14,7 +14,7 @@ import pandas as pd
 # from ..analysis.mtf_analysis import MultiTimeframeAnalysis
 # from ..analysis.smart_money import SmartMoneyAnalysis
 # from ..analysis.pattern_recognition import PatternAnalysis
-from ..modes.trading_mode_manager import TradingMode
+from ..modes.trading_mode_manager import TradingMode, trading_mode_manager
 
 # モック実装
 class MarketRegime:
@@ -94,6 +94,12 @@ class ScalpingEntryDetector:
         ScalpingSignal : 検出されたスキャルピングシグナル
         """
         try:
+            # スキャルピングモードがアクティブかチェック
+            if not trading_mode_manager.is_mode_active(TradingMode.SCALPING):
+                logger.info("Scalping mode is not active")
+                current_price = float(price_data['close'].iloc[-1]) if price_data is not None and len(price_data) > 0 else 1.0
+                return self._create_wait_signal(current_price, "スキャルピングモードが無効です")
+            
             # 価格データの検証
             if price_data is None or len(price_data) == 0:
                 logger.error(f"No price data for {symbol}")

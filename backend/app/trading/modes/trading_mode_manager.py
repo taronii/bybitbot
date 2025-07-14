@@ -45,7 +45,7 @@ class TradingModeManager:
             ),
             TradingMode.SCALPING: ModeConfig(
                 name="スキャルピングモード", 
-                enabled=False,
+                enabled=True,  # スキャルピングモードを有効に設定
                 max_positions=5,
                 position_size_percent=0.03,  # 3%
                 min_interval_seconds=60,     # 1分

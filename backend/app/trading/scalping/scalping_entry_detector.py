@@ -94,7 +94,17 @@ class ScalpingEntryDetector:
         ScalpingSignal : 検出されたスキャルピングシグナル
         """
         try:
+            # 価格データの検証
+            if price_data is None or len(price_data) == 0:
+                logger.error(f"No price data for {symbol}")
+                return self._create_error_signal(1.0)
+            
             current_price = float(price_data['close'].iloc[-1])
+            logger.debug(f"Current price for {symbol}: {current_price}")
+            
+            if current_price <= 0:
+                logger.error(f"Invalid price for {symbol}: {current_price}")
+                return self._create_error_signal(1.0)
             
             # Step 1: 市場状況の高速判定
             market_condition = await self._assess_market_condition(
@@ -129,9 +139,11 @@ class ScalpingEntryDetector:
             
         except Exception as e:
             logger.error(f"Scalping entry detection failed: {e}")
-            return self._create_error_signal(
-                price_data['close'].iloc[-1] if len(price_data) > 0 else 0.0
-            )
+            try:
+                default_price = price_data['close'].iloc[-1] if len(price_data) > 0 else 1.0
+            except:
+                default_price = 1.0
+            return self._create_error_signal(default_price)
     
     async def _assess_market_condition(
         self, 
@@ -597,6 +609,7 @@ class ScalpingEntryDetector:
         """待機シグナルの作成"""
         # 価格が0の場合はエラー
         if price <= 0:
+            logger.warning(f"Invalid price in wait signal: {price}, using default")
             price = 1.0  # デフォルト値
             
         return ScalpingSignal(
@@ -623,6 +636,11 @@ class ScalpingEntryDetector:
     
     def _create_error_signal(self, price: float) -> ScalpingSignal:
         """エラーシグナルの作成"""
+        # 価格の検証
+        if price <= 0:
+            logger.warning(f"Invalid price in error signal: {price}, using default")
+            price = 1.0
+            
         return ScalpingSignal(
             action='WAIT',
             confidence=0.0,

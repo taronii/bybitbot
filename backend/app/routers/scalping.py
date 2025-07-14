@@ -90,6 +90,34 @@ async def get_scalping_signal(
         orderbook_data = await _get_orderbook_data(client, symbol)
         volume_data = await _get_volume_data(client, symbol)
         
+        # データの検証
+        if price_data is None or len(price_data) == 0:
+            logger.error(f"Failed to get price data for {symbol}")
+            # エラー時のデフォルトシグナル
+            return {
+                "signal": {
+                    "action": "WAIT",
+                    "confidence": 0.0,
+                    "entry_price": 1.0,
+                    "stop_loss": 0.995,
+                    "take_profit": [1.005],
+                    "position_size_multiplier": 0.0,
+                    "speed_score": 0.0,
+                    "risk_reward_ratio": 0.0,
+                    "expected_duration_minutes": 0,
+                    "entry_reasons": [{
+                        "factor": "エラー",
+                        "score": 0.0,
+                        "description": "価格データの取得に失敗しました"
+                    }],
+                    "invalidation_price": 0.99,
+                    "metadata": {
+                        "error": "No price data available",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                }
+            }
+        
         # スキャルピングシグナル検出
         signal = await scalping_detector.detect_scalping_entry(
             symbol, price_data, orderbook_data, volume_data
@@ -362,6 +390,7 @@ async def _get_price_data(client: BybitClient, symbol: str):
         
         # より現実的なモックデータ生成（スキャルピング用）
         base_price = price_map.get(symbol, 50000)
+        logger.info(f"Generating mock data for {symbol}, base price: {base_price}")
         
         # 現在の時刻をシードに使用してランダム性を確保
         current_time = datetime.now()
@@ -371,6 +400,10 @@ async def _get_price_data(client: BybitClient, symbol: str):
         # 最新の価格をランダムに変動させる
         price_variation = np.random.uniform(-0.005, 0.005)  # ±0.5%の変動
         current_base_price = base_price * (1 + price_variation)
+        
+        if current_base_price <= 0:
+            logger.error(f"Invalid current_base_price for {symbol}: {current_base_price}")
+            current_base_price = base_price
         
         price_series = []
         volume_series = []
@@ -409,7 +442,9 @@ async def _get_price_data(client: BybitClient, symbol: str):
             'volume': volume_series
         }
         
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        logger.debug(f"Generated price data for {symbol}: {len(df)} rows, last price: {df['close'].iloc[-1] if len(df) > 0 else 'N/A'}")
+        return df
 
 async def _get_orderbook_data(client: BybitClient, symbol: str):
     """オーダーブックデータ取得（モック実装）"""

@@ -478,41 +478,41 @@ const ScalpingMode: React.FC = () => {
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <LinearProgress
                                 variant="determinate"
-                                value={signal.confidence * 100}
+                                value={(signal.confidence || 0) * 100}
                                 sx={{
                                   width: 60,
                                   height: 6,
                                   borderRadius: 3,
                                   '& .MuiLinearProgress-bar': {
-                                    backgroundColor: getConfidenceColor(signal.confidence),
+                                    backgroundColor: getConfidenceColor(signal.confidence || 0),
                                   },
                                 }}
                               />
                               <Typography variant="body2">
-                                {(signal.confidence * 100).toFixed(0)}%
+                                {((signal.confidence || 0) * 100).toFixed(0)}%
                               </Typography>
                             </Box>
                           </TableCell>
                           <TableCell>
                             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                              {getSpeedIcon(signal.speed_score)}
+                              {getSpeedIcon(signal.speed_score || 0)}
                               <Typography variant="body2" sx={{ ml: 1 }}>
-                                {(signal.speed_score * 100).toFixed(0)}%
+                                {((signal.speed_score || 0) * 100).toFixed(0)}%
                               </Typography>
                             </Box>
                           </TableCell>
-                          <TableCell>${signal.entry_price.toFixed(2)}</TableCell>
+                          <TableCell>${signal.entry_price ? signal.entry_price.toFixed(2) : '0.00'}</TableCell>
                           <TableCell>
                             <Box sx={{ fontSize: '0.75rem' }}>
                               <Typography variant="caption" sx={{ color: 'success.main', display: 'block' }}>
-                                利確: ${signal.take_profit && signal.take_profit.length > 0 ? signal.take_profit[0].toFixed(2) : '---'}
+                                利確: ${signal.take_profit && signal.take_profit.length > 0 && signal.take_profit[0] ? signal.take_profit[0].toFixed(2) : '---'}
                               </Typography>
                               <Typography variant="caption" sx={{ color: 'error.main', display: 'block' }}>
-                                損切: ${signal.stop_loss.toFixed(2)}
+                                損切: ${signal.stop_loss ? signal.stop_loss.toFixed(2) : '---'}
                               </Typography>
                             </Box>
                           </TableCell>
-                          <TableCell>1:{signal.risk_reward_ratio.toFixed(1)}</TableCell>
+                          <TableCell>1:{signal.risk_reward_ratio ? signal.risk_reward_ratio.toFixed(1) : '0.0'}</TableCell>
                           <TableCell>
                             {signal.action !== 'WAIT' && signal.confidence >= 0.45 ? (
                               <Button
@@ -576,22 +576,22 @@ const ScalpingMode: React.FC = () => {
                             size="small"
                           />
                         </TableCell>
-                        <TableCell>${position.entry_price.toFixed(2)}</TableCell>
-                        <TableCell>{position.quantity.toFixed(4)}</TableCell>
+                        <TableCell>${position.entry_price ? position.entry_price.toFixed(2) : '0.00'}</TableCell>
+                        <TableCell>{position.quantity ? position.quantity.toFixed(4) : '0.0000'}</TableCell>
                         <TableCell>
                           <Box>
-                            {position.profit_targets.map((target, idx) => (
+                            {position.profit_targets && position.profit_targets.map((target, idx) => (
                               <Typography key={idx} variant="caption" display="block" sx={{ color: 'success.main' }}>
-                                {target.description}
+                                {target.description || '---'}
                               </Typography>
                             ))}
                           </Box>
                         </TableCell>
                         <TableCell>
                           <Box>
-                            {position.stop_levels.map((stop, idx) => (
+                            {position.stop_levels && position.stop_levels.map((stop, idx) => (
                               <Typography key={idx} variant="caption" display="block" sx={{ color: 'error.main' }}>
-                                {stop.description}
+                                {stop.description || '---'}
                               </Typography>
                             ))}
                           </Box>

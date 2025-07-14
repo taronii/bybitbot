@@ -362,30 +362,40 @@ async def _get_price_data(client: BybitClient, symbol: str):
         
         # より現実的なモックデータ生成（スキャルピング用）
         base_price = price_map.get(symbol, 50000)
+        
+        # 現在の時刻をシードに使用してランダム性を確保
+        current_time = datetime.now()
+        random_seed = int(current_time.timestamp() * 1000) % 10000
+        np.random.seed(random_seed)
+        
+        # 最新の価格をランダムに変動させる
+        price_variation = np.random.uniform(-0.005, 0.005)  # ±0.5%の変動
+        current_base_price = base_price * (1 + price_variation)
+        
         price_series = []
         volume_series = []
         
         # よりダイナミックな価格変動を生成（スキャルピングシグナル検出用）
-        trend = np.random.choice([0.00005, -0.00005, 0.00002])  # より穏やかなトレンド
+        trend = np.random.choice([0.0001, -0.0001, 0.00005])  # より強いトレンド
         momentum = 0
         
         for i in range(100):
             # モメンタムの蓄積
-            momentum = momentum * 0.95 + np.random.normal(0, 0.0001)
+            momentum = momentum * 0.9 + np.random.normal(0, 0.002)
             
-            # 価格変動（より現実的な変動）
-            noise = np.random.normal(0, 0.0002)  # 0.02%のノイズ
-            price = base_price * (1 + trend * i + noise + momentum)
+            # 価格変動（より大きな変動）
+            noise = np.random.normal(0, 0.0005)  # 0.05%のノイズ
+            price = current_base_price * (1 + trend * i + noise + momentum)
             price_series.append(price)
             
             # ボリューム急増パターンを時々追加
-            base_volume = 500
-            if i > 85 and np.random.random() > 0.5:  # 最近のデータで50%の確率
-                # ボリューム急増（1.3-2.5倍）より強く
+            base_volume = 500 + np.random.uniform(-100, 100)  # ベースボリュームも変動
+            if i > 90 and np.random.random() > 0.5:  # 最近のデータで50%の確率
+                # ボリューム急増（1.3-2.5倍）
                 volume_multiplier = np.random.uniform(1.3, 2.5)
                 volume = base_volume * volume_multiplier
             else:
-                volume_noise = np.random.normal(0, 0.2)
+                volume_noise = np.random.normal(0, 0.3)
                 volume = base_volume * (1 + volume_noise)
             volume_series.append(max(100, volume))
         
@@ -432,7 +442,15 @@ async def _get_orderbook_data(client: BybitClient, symbol: str):
             'FILUSDT': 6,
             'DOGEUSDT': 0.1
         }
+        # 現在の時刻をシードに使用
+        current_time = datetime.now()
+        random_seed = int(current_time.timestamp() * 1000) % 10000
+        np.random.seed(random_seed + 1)  # 価格データとは異なるシード
+        
         base_price = price_map.get(symbol, 50000)
+        # 現在の価格をランダムに変動
+        price_variation = np.random.uniform(-0.005, 0.005)
+        current_price = base_price * (1 + price_variation)
         spread = 0.0001  # 0.01%のスプレッド
         
         bids = []
@@ -450,8 +468,8 @@ async def _get_orderbook_data(client: BybitClient, symbol: str):
             imbalance_factor = np.random.uniform(0.8, 1.2)  # バランス
         
         for i in range(10):
-            bid_price = base_price * (1 - spread * (i + 1))
-            ask_price = base_price * (1 + spread * (i + 1))
+            bid_price = current_price * (1 - spread * (i + 1))
+            ask_price = current_price * (1 + spread * (i + 1))
             
             # 不均衡を反映したボリューム
             base_bid_volume = np.random.uniform(50, 150) * (10 - i)  # より大きなボリューム
@@ -487,10 +505,15 @@ async def _get_volume_data(client: BybitClient, symbol: str):
         
     except Exception as e:
         logger.error(f"Volume data retrieval failed: {e}")
+        # 現在の時刻をシードに使用
+        current_time = datetime.now()
+        random_seed = int(current_time.timestamp() * 1000) % 10000
+        np.random.seed(random_seed + 2)  # 別のシード
+        
         # フォールバック用モックデータ（より現実的な値）
         base_volume = np.random.uniform(40000, 60000)
         # 最近のボリュームは時々スパイクする
-        recent_multiplier = np.random.choice([1.0, 1.5, 2.0], p=[0.7, 0.2, 0.1])
+        recent_multiplier = np.random.choice([1.0, 1.5, 2.0], p=[0.6, 0.3, 0.1])
         
         return {
             'volume_24h': base_volume,

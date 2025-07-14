@@ -15,9 +15,15 @@ class WebSocketService {
   private pingInterval: NodeJS.Timeout | null = null;
 
   constructor() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = process.env.REACT_APP_WS_URL || 'localhost:8000';
-    this.url = `${protocol}//${host}/ws`;
+    // APIのURLからWebSocketのURLを生成
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    
+    // HTTPプロトコルをWebSocketプロトコルに変換
+    const wsUrl = apiUrl
+      .replace('https://', 'wss://')
+      .replace('http://', 'ws://');
+    
+    this.url = `${wsUrl}/ws`;
     console.log('WebSocket URL:', this.url);
   }
 

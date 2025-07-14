@@ -366,26 +366,26 @@ async def _get_price_data(client: BybitClient, symbol: str):
         volume_series = []
         
         # よりダイナミックな価格変動を生成（スキャルピングシグナル検出用）
-        trend = np.random.choice([0.0001, -0.0001, 0.00005])  # より強いトレンド
+        trend = np.random.choice([0.00005, -0.00005, 0.00002])  # より穏やかなトレンド
         momentum = 0
         
         for i in range(100):
             # モメンタムの蓄積
-            momentum = momentum * 0.9 + np.random.normal(0, 0.002)
+            momentum = momentum * 0.95 + np.random.normal(0, 0.0001)
             
-            # 価格変動（より大きな変動）
-            noise = np.random.normal(0, 0.0005)  # 0.05%のノイズ
+            # 価格変動（より現実的な変動）
+            noise = np.random.normal(0, 0.0002)  # 0.02%のノイズ
             price = base_price * (1 + trend * i + noise + momentum)
             price_series.append(price)
             
             # ボリューム急増パターンを時々追加
             base_volume = 500
-            if i > 90 and np.random.random() > 0.7:  # 最近のデータで30%の確率
-                # ボリューム急増（1.2-2.0倍）
-                volume_multiplier = np.random.uniform(1.2, 2.0)
+            if i > 85 and np.random.random() > 0.5:  # 最近のデータで50%の確率
+                # ボリューム急増（1.3-2.5倍）より強く
+                volume_multiplier = np.random.uniform(1.3, 2.5)
                 volume = base_volume * volume_multiplier
             else:
-                volume_noise = np.random.normal(0, 0.3)
+                volume_noise = np.random.normal(0, 0.2)
                 volume = base_volume * (1 + volume_noise)
             volume_series.append(max(100, volume))
         
@@ -439,20 +439,28 @@ async def _get_orderbook_data(client: BybitClient, symbol: str):
         asks = []
         
         # リアルなオーダーブックを生成（不均衡パターンを含む）
-        imbalance_factor = np.random.uniform(0.5, 2.0)  # 買い/売りの不均衡
+        # より頻繁に不均衡を作る
+        imbalance_type = np.random.choice(['strong_buy', 'strong_sell', 'balanced'], p=[0.4, 0.4, 0.2])
+        
+        if imbalance_type == 'strong_buy':
+            imbalance_factor = np.random.uniform(2.0, 4.0)  # 強い買い圧力
+        elif imbalance_type == 'strong_sell':
+            imbalance_factor = np.random.uniform(0.25, 0.5)  # 強い売り圧力
+        else:
+            imbalance_factor = np.random.uniform(0.8, 1.2)  # バランス
         
         for i in range(10):
             bid_price = base_price * (1 - spread * (i + 1))
             ask_price = base_price * (1 + spread * (i + 1))
             
             # 不均衡を反映したボリューム
-            base_bid_volume = np.random.uniform(10, 30) * (10 - i)
-            base_ask_volume = np.random.uniform(10, 30) * (10 - i)
+            base_bid_volume = np.random.uniform(50, 150) * (10 - i)  # より大きなボリューム
+            base_ask_volume = np.random.uniform(50, 150) * (10 - i)
             
-            if imbalance_factor > 1.5:  # 買い圧力が強い
+            if imbalance_type == 'strong_buy':
                 bid_volume = base_bid_volume * imbalance_factor
                 ask_volume = base_ask_volume
-            elif imbalance_factor < 0.7:  # 売り圧力が強い
+            elif imbalance_type == 'strong_sell':
                 bid_volume = base_bid_volume
                 ask_volume = base_ask_volume / imbalance_factor
             else:

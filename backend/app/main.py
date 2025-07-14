@@ -11,7 +11,10 @@ import numpy as np
 from app.routers import settings, dashboard, debug, trading, scalping
 
 # ログ設定
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(

@@ -211,9 +211,13 @@ class ScalpingEntryDetector:
             baseline_volume = price_data['volume'].tail(20).mean()
             volume_surge = recent_volume / baseline_volume if baseline_volume > 0 else 1.0
             
+            logger.debug(f"Volume calculation - Recent: {recent_volume:.2f}, Baseline: {baseline_volume:.2f}, Surge: {volume_surge:.3f}")
+            
             # 価格変動速度（1分間での変動率）
             price_change = abs(price_data['close'].iloc[-1] - price_data['close'].iloc[-2])
             price_velocity = price_change / price_data['close'].iloc[-1] if price_data['close'].iloc[-1] > 0 else 0
+            
+            logger.debug(f"Price velocity - Change: {price_change:.6f}, Current price: {price_data['close'].iloc[-1]:.2f}, Velocity: {price_velocity:.6f}")
             
             # オーダーブック不均衡
             bids = orderbook_data.get('bids', [])
@@ -225,6 +229,8 @@ class ScalpingEntryDetector:
             
             orderbook_imbalance = abs(bid_volume - ask_volume) / total_volume if total_volume > 0 else 0
             
+            logger.debug(f"Orderbook - Bid vol: {bid_volume:.2f}, Ask vol: {ask_volume:.2f}, Imbalance: {orderbook_imbalance:.3f}")
+            
             # モメンタム強度（RSI_2期間）
             close_prices = price_data['close'].tail(10)
             price_changes = close_prices.diff().dropna()
@@ -232,16 +238,26 @@ class ScalpingEntryDetector:
             if len(price_changes) >= 3:
                 gains = price_changes[price_changes > 0].sum()
                 losses = abs(price_changes[price_changes < 0].sum())
-                rs = gains / losses if losses > 0 else 100
-                rsi_2 = 100 - (100 / (1 + rs))
+                
+                if losses > 0:
+                    rs = gains / losses
+                    rsi_2 = 100 - (100 / (1 + rs))
+                else:
+                    # 全て上昇している場合
+                    rsi_2 = 100 if gains > 0 else 50
+                
                 momentum_strength = abs(rsi_2 - 50) / 50  # 0-1に正規化
+                logger.debug(f"Momentum - Gains: {gains:.6f}, Losses: {losses:.6f}, RSI: {rsi_2:.2f}, Strength: {momentum_strength:.3f}")
             else:
                 momentum_strength = 0.0
+                logger.debug(f"Momentum - Not enough data points ({len(price_changes)}), Strength: {momentum_strength:.3f}")
             
             # 流動性の深さ
             bid_depth = sum(float(bid[1]) for bid in bids[:10]) if bids else 0
             ask_depth = sum(float(ask[1]) for ask in asks[:10]) if asks else 0
             liquidity_depth = min(bid_depth, ask_depth)
+            
+            logger.debug(f"Liquidity - Bid depth: {bid_depth:.2f}, Ask depth: {ask_depth:.2f}, Min depth: {liquidity_depth:.2f}")
             
             # スプレッドの狭さ
             if bids and asks:
@@ -251,13 +267,17 @@ class ScalpingEntryDetector:
                 spread_tightness = max(0, 1 - (spread / 0.001))  # 0.1%基準で正規化
             else:
                 spread_tightness = 0.0
+                
+            logger.debug(f"Spread - Spread %: {spread * 100 if 'spread' in locals() else 'N/A'}%, Tightness: {spread_tightness:.3f}")
             
             # ティック強度（価格変動の頻度と強度）
             price_changes_abs = abs(price_data['close'].tail(10).diff()).dropna()
             tick_intensity = price_changes_abs.mean() / price_data['close'].iloc[-1] if len(price_changes_abs) > 0 else 0
             
+            logger.debug(f"Tick intensity - Raw: {tick_intensity:.6f}")
+            
             # より現実的なスケーリング調整
-            return ScalpingMetrics(
+            scaled_metrics = ScalpingMetrics(
                 volume_surge=min(volume_surge, 10.0),  # 上限設定
                 price_velocity=min(price_velocity * 100, 10.0),  # より感度を高く
                 orderbook_imbalance=min(orderbook_imbalance * 2, 1.0),  # 増幅
@@ -266,6 +286,14 @@ class ScalpingEntryDetector:
                 spread_tightness=spread_tightness,
                 tick_intensity=min(tick_intensity * 100, 10.0)  # より感度を高く
             )
+            
+            logger.debug(f"Scaled metrics - Volume surge: {scaled_metrics.volume_surge:.3f}, "
+                        f"Price velocity: {scaled_metrics.price_velocity:.3f}, "
+                        f"Orderbook imbalance: {scaled_metrics.orderbook_imbalance:.3f}, "
+                        f"Liquidity depth: {scaled_metrics.liquidity_depth:.3f}, "
+                        f"Tick intensity: {scaled_metrics.tick_intensity:.3f}")
+            
+            return scaled_metrics
             
         except Exception as e:
             logger.error(f"Scalping metrics calculation failed: {e}")
@@ -283,10 +311,21 @@ class ScalpingEntryDetector:
             recent_data = price_data.tail(10)
             current_price = recent_data['close'].iloc[-1]
             
+            # デバッグログ追加
+            logger.info(f"Pattern detection metrics - Volume surge: {metrics.volume_surge:.3f}, "
+                       f"Price velocity: {metrics.price_velocity:.6f}, "
+                       f"Orderbook imbalance: {metrics.orderbook_imbalance:.3f}, "
+                       f"Momentum strength: {metrics.momentum_strength:.3f}, "
+                       f"Tick intensity: {metrics.tick_intensity:.3f}, "
+                       f"Spread tightness: {metrics.spread_tightness:.3f}, "
+                       f"Liquidity depth: {metrics.liquidity_depth:.3f}")
+            
             # パターン1: ボリューム急増 + 価格突破（緩和版）
-            if metrics.volume_surge > 1.0 and metrics.price_velocity > 0.0001:  # さらに緩和
+            if metrics.volume_surge > 0.8 and metrics.price_velocity > 0.00001:  # 大幅に緩和
                 direction = 'BUY' if recent_data['close'].iloc[-1] > recent_data['close'].iloc[-2] else 'SELL'
-                confidence = min(0.9, 0.45 + (metrics.volume_surge - 1.0) * 2 + metrics.price_velocity * 50)
+                confidence = min(0.9, 0.45 + (metrics.volume_surge - 0.8) * 3 + metrics.price_velocity * 100)
+                
+                logger.info(f"Pattern 1 detected: Volume surge pattern - Direction: {direction}, Confidence: {confidence:.3f}")
                 
                 patterns.append({
                     'name': 'ボリューム急増突破',
@@ -296,13 +335,17 @@ class ScalpingEntryDetector:
                     'speed_score': 0.9,
                     'expected_duration': 3  # 3分
                 })
+            else:
+                logger.debug(f"Pattern 1 not met: Volume surge {metrics.volume_surge:.3f} <= 0.8 or Price velocity {metrics.price_velocity:.6f} <= 0.00001")
             
             # パターン2: オーダーブック不均衡 + モメンタム（緩和版）
-            if metrics.orderbook_imbalance > 0.15 and metrics.momentum_strength > 0.3:  # さらに緩和
+            if metrics.orderbook_imbalance > 0.1 and metrics.momentum_strength > 0.2:  # 大幅に緩和
                 # ビッド側が強い場合はBUY、アスク側が強い場合はSELL
                 recent_change = recent_data['close'].iloc[-1] - recent_data['close'].iloc[-3]
                 direction = 'BUY' if recent_change > 0 else 'SELL'
-                confidence = min(0.85, 0.45 + metrics.orderbook_imbalance * 2 + metrics.momentum_strength)
+                confidence = min(0.85, 0.45 + metrics.orderbook_imbalance * 3 + metrics.momentum_strength * 1.5)
+                
+                logger.info(f"Pattern 2 detected: Orderbook imbalance - Direction: {direction}, Confidence: {confidence:.3f}")
                 
                 patterns.append({
                     'name': 'オーダーブック不均衡',
@@ -312,13 +355,17 @@ class ScalpingEntryDetector:
                     'speed_score': 0.8,
                     'expected_duration': 5  # 5分
                 })
+            else:
+                logger.debug(f"Pattern 2 not met: Orderbook imbalance {metrics.orderbook_imbalance:.3f} <= 0.1 or Momentum {metrics.momentum_strength:.3f} <= 0.2")
             
             # パターン3: 高速リバーサル（逆張り）
-            if metrics.momentum_strength > 0.6 and metrics.tick_intensity > 1.0:  # 緩和
+            if metrics.momentum_strength > 0.4 and metrics.tick_intensity > 0.5:  # 大幅に緩和
                 # 現在のトレンドと逆方向
                 recent_change = recent_data['close'].iloc[-1] - recent_data['close'].iloc[-5]
                 direction = 'SELL' if recent_change > 0 else 'BUY'
-                confidence = min(0.8, 0.5 + metrics.momentum_strength * 0.5 + metrics.tick_intensity * 0.2)
+                confidence = min(0.8, 0.5 + metrics.momentum_strength * 0.7 + metrics.tick_intensity * 0.3)
+                
+                logger.info(f"Pattern 3 detected: Fast reversal - Direction: {direction}, Confidence: {confidence:.3f}")
                 
                 patterns.append({
                     'name': '高速リバーサル',
@@ -328,16 +375,20 @@ class ScalpingEntryDetector:
                     'speed_score': 0.95,
                     'expected_duration': 2  # 2分
                 })
+            else:
+                logger.debug(f"Pattern 3 not met: Momentum {metrics.momentum_strength:.3f} <= 0.4 or Tick intensity {metrics.tick_intensity:.3f} <= 0.5")
             
             # パターン4: 完璧なスプレッド環境での順張り
-            if metrics.spread_tightness > 0.5 and metrics.liquidity_depth > 0.2:  # 緩和
+            if metrics.spread_tightness > 0.3 and metrics.liquidity_depth > 0.1:  # 大幅に緩和
                 # 短期トレンド確認
                 sma_3 = recent_data['close'].tail(3).mean()
                 sma_7 = recent_data['close'].tail(7).mean()
                 
-                if abs(sma_3 - sma_7) / current_price > 0.0002:  # 0.02%以上の差に緩和
+                if abs(sma_3 - sma_7) / current_price > 0.0001:  # 0.01%以上の差に緩和
                     direction = 'BUY' if sma_3 > sma_7 else 'SELL'
-                    confidence = min(0.8, 0.45 + metrics.spread_tightness * 0.5 + metrics.liquidity_depth)
+                    confidence = min(0.8, 0.45 + metrics.spread_tightness * 0.7 + metrics.liquidity_depth * 2)
+                    
+                    logger.info(f"Pattern 4 detected: Perfect spread trend - Direction: {direction}, Confidence: {confidence:.3f}")
                     
                     patterns.append({
                         'name': '完璧環境順張り',
@@ -347,11 +398,45 @@ class ScalpingEntryDetector:
                         'speed_score': 0.7,
                         'expected_duration': 7  # 7分
                     })
+                else:
+                    logger.debug(f"Pattern 4 not met: SMA difference {abs(sma_3 - sma_7) / current_price:.6f} <= 0.0001")
+            else:
+                logger.debug(f"Pattern 4 not met: Spread tightness {metrics.spread_tightness:.3f} <= 0.3 or Liquidity {metrics.liquidity_depth:.3f} <= 0.1")
+            
+            # パターン5: フォールバックパターン（常に何かシグナルを出す）
+            if len(patterns) == 0:
+                # 基本的な方向性判定
+                recent_change = recent_data['close'].iloc[-1] - recent_data['close'].iloc[-5]
+                direction = 'BUY' if recent_change > 0 else 'SELL'
+                
+                # 最低限の信頼度を計算
+                base_confidence = 0.45
+                if metrics.volume_surge > 1.0:
+                    base_confidence += 0.05
+                if metrics.orderbook_imbalance > 0.2:
+                    base_confidence += 0.05
+                if metrics.momentum_strength > 0.5:
+                    base_confidence += 0.05
+                
+                confidence = min(0.65, base_confidence)
+                
+                logger.info(f"Pattern 5 (Fallback) detected: Basic trend - Direction: {direction}, Confidence: {confidence:.3f}")
+                
+                patterns.append({
+                    'name': '基本トレンドフォロー',
+                    'direction': direction,
+                    'confidence': confidence,
+                    'entry_type': 'BASIC_TREND',
+                    'speed_score': 0.6,
+                    'expected_duration': 5  # 5分
+                })
             
             # パターンの重複排除と優先順位付け
             if len(patterns) > 1:
                 patterns = sorted(patterns, key=lambda x: x['confidence'] * x['speed_score'], reverse=True)
                 patterns = patterns[:2]  # 上位2パターンのみ
+            
+            logger.info(f"Total patterns detected: {len(patterns)}")
             
             return patterns
             

@@ -60,7 +60,7 @@ class HighFrequencyOptimizer:
         self.throughput_samples: Deque[int] = deque(maxlen=60)  # 1分間のサンプル
         
         # 初期レイテンシサンプルを追加（デフォルト値）
-        for _ in range(10):
+        for _ in range(50):
             self.latency_samples.append(30.0)  # 30ms の初期値
         
         # 実行キュー
@@ -91,6 +91,7 @@ class HighFrequencyOptimizer:
         
         # デバッグモード（レイテンシチェックを一時的にバイパス）
         self.config.bypass_latency_check = True
+        logger.info(f"HighFrequencyOptimizer initialized with bypass_latency_check={self.config.bypass_latency_check}")
         
     async def optimize_order_execution(
         self,
@@ -121,12 +122,18 @@ class HighFrequencyOptimizer:
                 }
             
             # レイテンシチェック（バイパス可能）
-            if not self.config.bypass_latency_check and not await self._check_latency_conditions():
-                return {
-                    'success': False,
-                    'error': 'High latency detected',
-                    'current_latency': self._get_current_latency()
-                }
+            if not self.config.bypass_latency_check:
+                latency_check = await self._check_latency_conditions()
+                if not latency_check:
+                    current_latency = self._get_current_latency()
+                    logger.warning(f"High latency detected: {current_latency:.2f}ms (threshold: {self.config.latency_threshold_ms}ms)")
+                    return {
+                        'success': False,
+                        'error': f'High latency detected: {current_latency:.2f}ms',
+                        'current_latency': current_latency
+                    }
+            else:
+                logger.debug("Latency check bypassed")
             
             # リソースチェック
             if not await self._check_resource_availability():

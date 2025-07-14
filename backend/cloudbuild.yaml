@@ -1,0 +1,13 @@
+steps:
+  # Dockerイメージをビルド
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/bybitbot-backend:latest', '.']
+    dir: '.'
+
+  # イメージをプッシュ
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/bybitbot-backend:latest']
+
+# ビルドされたイメージ
+images:
+  - 'gcr.io/$PROJECT_ID/bybitbot-backend:latest'

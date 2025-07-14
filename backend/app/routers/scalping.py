@@ -302,11 +302,19 @@ async def get_scalping_status() -> Dict:
         # 各ポジションの利確・損切り情報を追加
         positions_with_levels = []
         for position_id, position in active_positions.items():
-            # 利確レベル取得
-            profit_levels = rapid_profit_system.get_profit_targets(position_id)
+            try:
+                # 利確レベル取得
+                profit_levels = rapid_profit_system.get_profit_targets(position_id)
+            except Exception as e:
+                logger.warning(f"Failed to get profit targets for {position_id}: {e}")
+                profit_levels = []
             
-            # 損切りレベル取得
-            stop_levels = aggressive_stop_system.get_stop_levels(position_id)
+            try:
+                # 損切りレベル取得
+                stop_levels = aggressive_stop_system.get_stop_levels(position_id)
+            except Exception as e:
+                logger.warning(f"Failed to get stop levels for {position_id}: {e}")
+                stop_levels = []
             
             positions_with_levels.append({
                 **position,

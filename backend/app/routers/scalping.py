@@ -308,6 +308,32 @@ async def get_scalping_status() -> Dict:
         logger.error(f"Status retrieval failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/clear-positions")
+async def clear_positions() -> Dict:
+    """
+    ポジション情報をクリア（デバッグ用）
+    """
+    try:
+        # スキャルピングモードのポジションをクリア
+        trading_mode_manager.active_positions[TradingMode.SCALPING] = []
+        trading_mode_manager.active_positions[TradingMode.CONSERVATIVE] = []
+        
+        # 日次カウンタをリセット
+        trading_mode_manager.daily_trades[TradingMode.SCALPING] = 0
+        trading_mode_manager.daily_trades[TradingMode.CONSERVATIVE] = 0
+        
+        logger.info("All positions and daily counters cleared")
+        
+        return {
+            "success": True,
+            "message": "ポジション情報をクリアしました",
+            "status": trading_mode_manager.get_status()
+        }
+        
+    except Exception as e:
+        logger.error(f"Position clearing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # シンプルなヘルパー関数
 
 async def _get_simple_price_data(symbol: str):

@@ -142,6 +142,8 @@ class TradingModeManager:
             
             # 最大ポジション数チェック
             current_positions = len(self.active_positions[mode])
+            logger.info(f"Position check for {mode.value}: current={current_positions}, max={config.max_positions}, positions={[p.get('symbol', 'Unknown') for p in self.active_positions[mode]]}")
+            
             if current_positions >= config.max_positions:
                 return {
                     "can_open": False,
@@ -404,6 +406,10 @@ class TradingModeManager:
                     if expired in positions:
                         positions.remove(expired)
                         logger.warning(f"Expired position cleaned up: {expired.get('position_id')}")
+                
+                # ポジション数のログ出力
+                if len(positions) > 0:
+                    logger.info(f"Active positions for {mode.value}: {len(positions)} - {[p.get('symbol', 'Unknown') for p in positions]}")
                         
         except Exception as e:
             logger.error(f"Position cleanup failed: {e}")

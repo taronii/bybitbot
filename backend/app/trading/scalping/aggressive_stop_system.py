@@ -600,7 +600,7 @@ class AggressiveStopSystem:
     
     def get_stop_levels(self, position_id: str) -> List[Dict]:
         """ポジションの損切りレベルを取得"""
-        levels = self.stop_levels.get(position_id, [])
+        levels = self.active_stops.get(position_id, [])
         result = []
         
         for level in levels:

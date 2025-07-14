@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # 依存関係をインストール
-RUN npm ci --only=production
+RUN npm ci
 
 # アプリケーションコードをコピー
 COPY . .
@@ -25,22 +25,17 @@ RUN npm run build
 # 実行ステージ
 FROM nginx:alpine
 
-# Nginxの設定
+# Remove default nginx config
+RUN rm -rf /etc/nginx/conf.d/*
+
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy built React app
 COPY --from=build /app/build /usr/share/nginx/html
 
-# カスタムNginx設定
-RUN echo 'server { \
-    listen 80; \
-    location / { \
-        root /usr/share/nginx/html; \
-        index index.html index.htm; \
-        try_files $uri $uri/ /index.html; \
-    } \
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ { \
-        expires 1y; \
-        add_header Cache-Control "public, immutable"; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
+# Create a health check file
+RUN echo "OK" > /usr/share/nginx/html/health
 
 EXPOSE 80
 

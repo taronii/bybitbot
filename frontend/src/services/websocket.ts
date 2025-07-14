@@ -16,7 +16,7 @@ class WebSocketService {
 
   constructor() {
     // APIのURLからWebSocketのURLを生成
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    const apiUrl = process.env.REACT_APP_API_URL || 'https://bybitbot-backend-731283498892.asia-northeast1.run.app';
     
     // HTTPプロトコルをWebSocketプロトコルに変換
     const wsUrl = apiUrl

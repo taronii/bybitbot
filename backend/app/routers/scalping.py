@@ -18,6 +18,7 @@ from ..trading.scalping.aggressive_stop_system import aggressive_stop_system
 from ..trading.scalping.high_frequency_optimizer import hf_optimizer
 from ..trading.scalping.performance_tracker import performance_tracker
 from ..trading.modes.trading_mode_manager import trading_mode_manager, TradingMode
+from ..trading.data.market_data_fetcher import market_data_fetcher
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +355,28 @@ async def clear_positions() -> Dict:
 # シンプルなヘルパー関数
 
 async def _get_simple_price_data(symbol: str):
-    """シンプルな価格データ生成"""
+    """Bybitから実際の価格データを取得"""
+    try:
+        # market_data_fetcherを初期化
+        market_data_fetcher.initialize()
+        
+        # 実際のKLineデータを取得（1分足、100本）
+        df = await market_data_fetcher.get_kline_data(symbol, interval='1', limit=100)
+        
+        # データが有効か確認
+        if df is not None and not df.empty:
+            logger.info(f"Successfully fetched {len(df)} candles for {symbol}")
+            return df
+        else:
+            logger.warning(f"No data received for {symbol}, using mock data")
+            return _get_mock_price_data(symbol)
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch price data for {symbol}: {e}")
+        return _get_mock_price_data(symbol)
+
+def _get_mock_price_data(symbol: str):
+    """モック価格データ生成（フォールバック用）"""
     # 通貨ごとの現実的な価格を設定
     price_map = {
         'BTCUSDT': 50000,
@@ -422,7 +444,28 @@ async def _get_simple_price_data(symbol: str):
     return pd.DataFrame(data)
 
 async def _get_simple_orderbook_data(symbol: str):
-    """シンプルなオーダーブックデータ生成"""
+    """Bybitから実際のオーダーブックデータを取得"""
+    try:
+        # market_data_fetcherを初期化
+        market_data_fetcher.initialize()
+        
+        # 実際のオーダーブックデータを取得
+        orderbook = await market_data_fetcher.get_orderbook_data(symbol, limit=50)
+        
+        # データが有効か確認
+        if orderbook and 'bids' in orderbook and 'asks' in orderbook:
+            logger.info(f"Successfully fetched orderbook for {symbol}")
+            return orderbook
+        else:
+            logger.warning(f"No orderbook data received for {symbol}, using mock data")
+            return _get_mock_orderbook_data(symbol)
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch orderbook data for {symbol}: {e}")
+        return _get_mock_orderbook_data(symbol)
+
+def _get_mock_orderbook_data(symbol: str):
+    """モックオーダーブックデータ生成（フォールバック用）"""
     price_map = {
         'BTCUSDT': 50000,
         'ETHUSDT': 3000,
@@ -479,7 +522,41 @@ async def _get_simple_orderbook_data(symbol: str):
     }
 
 async def _get_simple_volume_data(symbol: str):
-    """シンプルなボリュームデータ生成"""
+    """Bybitから実際のボリュームデータを取得"""
+    try:
+        # market_data_fetcherを初期化
+        market_data_fetcher.initialize()
+        
+        # ティッカーデータから24時間ボリュームを取得
+        ticker = await market_data_fetcher.get_ticker_data(symbol)
+        
+        if ticker and 'volume_24h' in ticker:
+            # 最近の取引データも取得
+            recent_trades = await market_data_fetcher.get_recent_trades(symbol, limit=100)
+            
+            # 直近5分のボリュームを計算
+            recent_volume = 0
+            if recent_trades:
+                cutoff_time = datetime.now() - timedelta(minutes=5)
+                for trade in recent_trades:
+                    if trade['timestamp'] > cutoff_time:
+                        recent_volume += trade['quantity']
+            
+            logger.info(f"Successfully fetched volume data for {symbol}")
+            return {
+                'volume_24h': ticker['volume_24h'],
+                'volume_recent': recent_volume
+            }
+        else:
+            logger.warning(f"No volume data received for {symbol}, using mock data")
+            return _get_mock_volume_data(symbol)
+            
+    except Exception as e:
+        logger.error(f"Failed to fetch volume data for {symbol}: {e}")
+        return _get_mock_volume_data(symbol)
+
+def _get_mock_volume_data(symbol: str):
+    """モックボリュームデータ生成（フォールバック用）"""
     # 現在の時刻をシードに使用
     current_time = datetime.now()
     random_seed = int(current_time.timestamp() * 1000) % 10000

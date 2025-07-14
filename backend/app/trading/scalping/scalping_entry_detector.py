@@ -15,6 +15,7 @@ import pandas as pd
 # from ..analysis.smart_money import SmartMoneyAnalysis
 # from ..analysis.pattern_recognition import PatternAnalysis
 from ..modes.trading_mode_manager import TradingMode, trading_mode_manager
+from ..data.market_data_fetcher import market_data_fetcher
 
 # モック実装
 class MarketRegime:

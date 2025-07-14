@@ -612,7 +612,7 @@ const ScalpingMode: React.FC = () => {
               スキャルピング成績
             </Typography>
 
-            {performance ? (
+            {performance && performance.overview ? (
               <Box>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
                   <Box>
@@ -620,31 +620,31 @@ const ScalpingMode: React.FC = () => {
                       総取引数
                     </Typography>
                     <Typography variant="h6">
-                      {performance.overview.total_trades}
+                      {performance.overview.total_trades || 0}
                     </Typography>
                   </Box>
                   <Box>
                     <Typography variant="body2" color="textSecondary">
                       勝率
                     </Typography>
-                    <Typography variant="h6" color={performance.overview.win_rate >= 70 ? 'success.main' : 'warning.main'}>
-                      {performance.overview.win_rate.toFixed(1)}%
+                    <Typography variant="h6" color={(performance.overview.win_rate || 0) >= 70 ? 'success.main' : 'warning.main'}>
+                      {(performance.overview.win_rate || 0).toFixed(1)}%
                     </Typography>
                   </Box>
                   <Box>
                     <Typography variant="body2" color="textSecondary">
                       純利益
                     </Typography>
-                    <Typography variant="h6" color={performance.overview.net_profit >= 0 ? 'success.main' : 'error.main'}>
-                      ${performance.overview.net_profit.toFixed(2)}
+                    <Typography variant="h6" color={(performance.overview.net_profit || 0) >= 0 ? 'success.main' : 'error.main'}>
+                      ${(performance.overview.net_profit || 0).toFixed(2)}
                     </Typography>
                   </Box>
                   <Box>
                     <Typography variant="body2" color="textSecondary">
                       ROI
                     </Typography>
-                    <Typography variant="h6" color={performance.overview.return_on_capital >= 0 ? 'success.main' : 'error.main'}>
-                      {performance.overview.return_on_capital.toFixed(1)}%
+                    <Typography variant="h6" color={(performance.overview.return_on_capital || 0) >= 0 ? 'success.main' : 'error.main'}>
+                      {(performance.overview.return_on_capital || 0).toFixed(1)}%
                     </Typography>
                   </Box>
                 </Box>
@@ -656,22 +656,22 @@ const ScalpingMode: React.FC = () => {
                   </Typography>
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" color="textSecondary">
-                      最大ドローダウン: {performance.risk_metrics.max_drawdown.toFixed(1)}%
+                      最大ドローダウン: {(performance.risk_metrics?.max_drawdown || 0).toFixed(1)}%
                     </Typography>
                   </Box>
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" color="textSecondary">
-                      プロフィットファクター: {performance.risk_metrics.profit_factor.toFixed(2)}
+                      プロフィットファクター: {(performance.risk_metrics?.profit_factor || 0).toFixed(2)}
                     </Typography>
                   </Box>
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" color="textSecondary">
-                      平均保有時間: {performance.trading_stats.avg_holding_time_minutes.toFixed(1)}分
+                      平均保有時間: {(performance.trading_stats?.avg_holding_time_minutes || 0).toFixed(1)}分
                     </Typography>
                   </Box>
                   <Box>
                     <Typography variant="body2" color="textSecondary">
-                      時間あたり取引数: {performance.trading_stats.trades_per_hour.toFixed(1)}回/時
+                      時間あたり取引数: {(performance.trading_stats?.trades_per_hour || 0).toFixed(1)}回/時
                     </Typography>
                   </Box>
                 </Box>

@@ -294,12 +294,29 @@ async def get_scalping_status() -> Dict:
     """
     try:
         mode_status = trading_mode_manager.get_status()
-        active_positions = rapid_profit_system.get_all_positions()
+        positions_data = rapid_profit_system.get_all_positions()
+        active_positions = positions_data.get('positions', {})
         hf_performance = hf_optimizer.get_performance_report()
+        
+        # 各ポジションの利確・損切り情報を追加
+        positions_with_levels = []
+        for position_id, position in active_positions.items():
+            # 利確レベル取得
+            profit_levels = rapid_profit_system.get_profit_targets(position_id)
+            
+            # 損切りレベル取得
+            stop_levels = aggressive_stop_system.get_stop_levels(position_id)
+            
+            positions_with_levels.append({
+                **position,
+                "position_id": position_id,
+                "profit_targets": profit_levels,
+                "stop_levels": stop_levels
+            })
         
         return {
             "mode_status": mode_status,
-            "active_positions": active_positions,
+            "active_positions": positions_with_levels,
             "execution_performance": hf_performance,
             "timestamp": datetime.now().isoformat()
         }

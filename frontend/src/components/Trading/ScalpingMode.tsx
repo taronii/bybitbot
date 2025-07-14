@@ -96,6 +96,30 @@ interface OptimizationSuggestion {
   difficulty: string;
 }
 
+interface PositionWithLevels {
+  position_id: string;
+  symbol: string;
+  direction: string;
+  entry_price: number;
+  quantity: number;
+  signal_confidence: number;
+  expected_duration: number;
+  profit_targets: Array<{
+    price: number;
+    percentage: number;
+    type: string;
+    priority: number;
+    description: string;
+  }>;
+  stop_levels: Array<{
+    price: number;
+    name: string;
+    trigger_conditions: string[];
+    priority: number;
+    description: string;
+  }>;
+}
+
 const ScalpingMode: React.FC = () => {
   const [scalpingEnabled, setScalpingEnabled] = useState(false);
   const [autoTradeEnabled, setAutoTradeEnabled] = useState(false); // 自動取引フラグ
@@ -106,6 +130,7 @@ const ScalpingMode: React.FC = () => {
   const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set(['BTCUSDT']));
   const [alerts, setAlerts] = useState<Array<{ message: string; type: 'success' | 'error' | 'warning' }>>([]);
   const [executedSignals, setExecutedSignals] = useState<Set<string>>(new Set()); // 実行済みシグナル追跡
+  const [activePositions, setActivePositions] = useState<PositionWithLevels[]>([]); // アクティブポジション
 
   // スキャルピング対象シンボル（高流動性銘柄）
   const scalpingSymbols = [
@@ -197,13 +222,18 @@ const ScalpingMode: React.FC = () => {
 
   const fetchPerformance = async () => {
     try {
-      const [perfResponse, suggestionsResponse] = await Promise.all([
+      const [perfResponse, suggestionsResponse, statusResponse] = await Promise.all([
         apiService.get('/api/trading/scalping/performance'),
-        apiService.get('/api/trading/scalping/suggestions')
+        apiService.get('/api/trading/scalping/suggestions'),
+        apiService.get('/api/trading/scalping/status')
       ]);
       
       setPerformance(perfResponse.data as PerformanceSummary);
       setSuggestions(suggestionsResponse.data as OptimizationSuggestion[]);
+      
+      // アクティブポジションを更新
+      const statusData = statusResponse.data as { active_positions: PositionWithLevels[] };
+      setActivePositions(statusData.active_positions || []);
     } catch (error) {
       console.error('Failed to fetch performance data:', error);
     }
@@ -290,13 +320,21 @@ const ScalpingMode: React.FC = () => {
 
     // 初回取得
     fetchScalpingSignals();
+    fetchPerformance();
 
     // 定期的に更新
     const signalInterval = setInterval(() => {
       fetchScalpingSignals();
     }, 10000); // 10秒ごとに短縮
 
-    return () => clearInterval(signalInterval);
+    const performanceInterval = setInterval(() => {
+      fetchPerformance();
+    }, 5000); // 5秒ごとにポジション状態を更新
+
+    return () => {
+      clearInterval(signalInterval);
+      clearInterval(performanceInterval);
+    };
   }, [scalpingEnabled, selectedSymbols]);
 
   return (
@@ -415,6 +453,7 @@ const ScalpingMode: React.FC = () => {
                       <TableCell>信頼度</TableCell>
                       <TableCell>スピード</TableCell>
                       <TableCell>エントリー価格</TableCell>
+                      <TableCell>利確/損切り</TableCell>
                       <TableCell>リスクリワード</TableCell>
                       <TableCell>アクション</TableCell>
                     </TableRow>
@@ -463,6 +502,16 @@ const ScalpingMode: React.FC = () => {
                             </Box>
                           </TableCell>
                           <TableCell>${signal.entry_price.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <Box sx={{ fontSize: '0.75rem' }}>
+                              <Typography variant="caption" sx={{ color: 'success.main', display: 'block' }}>
+                                利確: ${signal.take_profit && signal.take_profit.length > 0 ? signal.take_profit[0].toFixed(2) : '---'}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'error.main', display: 'block' }}>
+                                損切: ${signal.stop_loss.toFixed(2)}
+                              </Typography>
+                            </Box>
+                          </TableCell>
                           <TableCell>1:{signal.risk_reward_ratio.toFixed(1)}</TableCell>
                           <TableCell>
                             {signal.action !== 'WAIT' && signal.confidence >= 0.45 ? (
@@ -495,6 +544,66 @@ const ScalpingMode: React.FC = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* アクティブポジション */}
+        {activePositions.length > 0 && (
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                アクティブポジション
+              </Typography>
+              
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>シンボル</TableCell>
+                      <TableCell>方向</TableCell>
+                      <TableCell>エントリー価格</TableCell>
+                      <TableCell>数量</TableCell>
+                      <TableCell>利確レベル</TableCell>
+                      <TableCell>損切りレベル</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {activePositions.map((position) => (
+                      <TableRow key={position.position_id}>
+                        <TableCell>{position.symbol}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={position.direction}
+                            color={position.direction === 'BUY' ? 'success' : 'error'}
+                            size="small"
+                          />
+                        </TableCell>
+                        <TableCell>${position.entry_price.toFixed(2)}</TableCell>
+                        <TableCell>{position.quantity.toFixed(4)}</TableCell>
+                        <TableCell>
+                          <Box>
+                            {position.profit_targets.map((target, idx) => (
+                              <Typography key={idx} variant="caption" display="block" sx={{ color: 'success.main' }}>
+                                {target.description}
+                              </Typography>
+                            ))}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Box>
+                            {position.stop_levels.map((stop, idx) => (
+                              <Typography key={idx} variant="caption" display="block" sx={{ color: 'error.main' }}>
+                                {stop.description}
+                              </Typography>
+                            ))}
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </CardContent>
+          </Card>
+        )}
 
         {/* パフォーマンス概要 */}
         <Card>

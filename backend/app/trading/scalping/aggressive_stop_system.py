@@ -597,6 +597,58 @@ class AggressiveStopSystem:
             'momentum_deterioration': metrics.momentum_deterioration,
             'volume_decline': metrics.volume_decline
         }
+    
+    def get_stop_levels(self, position_id: str) -> List[Dict]:
+        """ポジションの損切りレベルを取得"""
+        levels = self.stop_levels.get(position_id, [])
+        result = []
+        
+        for level in levels:
+            if level.is_active:
+                result.append({
+                    "price": level.stop_price,
+                    "name": level.level_name,
+                    "trigger_conditions": level.trigger_conditions,
+                    "priority": level.priority,
+                    "description": f"{level.level_name}: {level.stop_price:.2f}"
+                })
+        
+        # 設定からの追加情報
+        if position_id in self.stop_configs:
+            config = self.stop_configs[position_id]
+            position = self.active_positions.get(position_id, {})
+            entry_price = position.get('entry_price', 0)
+            
+            if entry_price > 0:
+                # 初期ストップ
+                if position.get('direction') == 'BUY':
+                    initial_stop = entry_price * (1 - config.initial_stop_distance / 100)
+                else:
+                    initial_stop = entry_price * (1 + config.initial_stop_distance / 100)
+                
+                result.append({
+                    "price": initial_stop,
+                    "name": "初期ストップ",
+                    "trigger_conditions": ["価格"],
+                    "priority": 1,
+                    "description": f"初期ストップ: {initial_stop:.2f} (-{config.initial_stop_distance:.1f}%)"
+                })
+                
+                # 緊急ストップ
+                if position.get('direction') == 'BUY':
+                    emergency_stop = entry_price * (1 - config.emergency_stop_percent / 100)
+                else:
+                    emergency_stop = entry_price * (1 + config.emergency_stop_percent / 100)
+                
+                result.append({
+                    "price": emergency_stop,
+                    "name": "緊急ストップ",
+                    "trigger_conditions": ["緊急事態"],
+                    "priority": 0,
+                    "description": f"緊急ストップ: {emergency_stop:.2f} (-{config.emergency_stop_percent:.1f}%)"
+                })
+        
+        return sorted(result, key=lambda x: x['priority'])
 
 # グローバルインスタンス
 aggressive_stop_system = AggressiveStopSystem()

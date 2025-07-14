@@ -511,6 +511,23 @@ class RapidProfitSystem:
             'active_positions': len(self.active_positions),
             'positions': self.active_positions
         }
+    
+    def get_profit_targets(self, position_id: str) -> List[Dict]:
+        """ポジションの利確ターゲットを取得"""
+        targets = self.profit_targets.get(position_id, [])
+        result = []
+        
+        for target in targets:
+            if target.is_active:
+                result.append({
+                    "price": target.target_price,
+                    "percentage": target.percentage,
+                    "type": target.trigger_type,
+                    "priority": target.priority,
+                    "description": f"利確レベル{target.priority}: {target.target_price:.2f} ({target.percentage*100:.0f}%)"
+                })
+        
+        return result
 
 # グローバルインスタンス
 rapid_profit_system = RapidProfitSystem()

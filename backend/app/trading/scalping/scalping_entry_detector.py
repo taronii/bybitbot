@@ -59,9 +59,9 @@ class ScalpingEntryDetector:
     """
     
     def __init__(self):
-        self.min_confidence = 0.45  # 緩和：45%以上で取引可能
-        self.max_spread_percent = 0.15  # 緩和：最大スプレッド（0.15%）
-        self.min_volume_multiplier = 1.1  # 緩和：最小ボリューム倍率（1.1倍以上）
+        self.min_confidence = 0.35  # さらに緩和：35%以上で取引可能（より多くのエントリー機会）
+        self.max_spread_percent = 0.20  # 緩和：最大スプレッド（0.20%）
+        self.min_volume_multiplier = 1.05  # さらに緩和：最小ボリューム倍率（1.05倍以上）
         self.quick_profit_target = 0.15  # 迅速利確目標（0.15%）
         self.tight_stop_loss = 0.1  # タイトストップロス（0.1%）
         

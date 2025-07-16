@@ -72,8 +72,13 @@ class ApiService {
   }
 
   // API設定をテスト
-  async testApiConnection(settings: ApiSettings): Promise<boolean> {
+  async testApiConnection(settings: ApiSettings): Promise<{ success: boolean; message: string; details?: any }> {
     try {
+      console.log('Testing API connection with settings:', { 
+        ...settings, 
+        api_secret: '***hidden***' 
+      });
+      
       const response = await fetch(`${this.baseUrl}/api/test-connection`, {
         method: 'POST',
         headers: {
@@ -81,10 +86,62 @@ class ApiService {
         },
         body: JSON.stringify(settings),
       });
-      return response.ok;
+      
+      const responseText = await response.text();
+      console.log('API response status:', response.status);
+      console.log('API response headers:', response.headers);
+      
+      try {
+        const data = JSON.parse(responseText);
+        if (response.ok) {
+          return { 
+            success: true, 
+            message: data.message || '接続成功',
+            details: data
+          };
+        } else {
+          return { 
+            success: false, 
+            message: data.detail || data.message || `エラー: ${response.status} ${response.statusText}`,
+            details: data
+          };
+        }
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
+        return {
+          success: false,
+          message: `サーバーからの応答が不正です: ${response.status} ${response.statusText}`,
+          details: { responseText: responseText.substring(0, 200) }
+        };
+      }
     } catch (error) {
       console.error('API connection test failed:', error);
-      return false;
+      
+      // ネットワークエラーの詳細な診断
+      let errorMessage = '接続に失敗しました: ';
+      
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        errorMessage += 'ネットワークエラー。インターネット接続を確認してください。';
+        
+        // タブレット特有の問題をチェック
+        if (/iPad|Android/i.test(navigator.userAgent)) {
+          errorMessage += ' タブレットのブラウザ設定でサイトへのアクセスが許可されているか確認してください。';
+        }
+      } else if (error instanceof Error) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += '不明なエラー';
+      }
+      
+      return { 
+        success: false, 
+        message: errorMessage,
+        details: { 
+          error: error instanceof Error ? error.message : String(error),
+          baseUrl: this.baseUrl,
+          userAgent: navigator.userAgent
+        }
+      };
     }
   }
 

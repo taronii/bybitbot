@@ -40,10 +40,18 @@ async def toggle_scalping_mode(
     スキャルピングモードのON/OFF切り替え
     """
     try:
+        logger.info(f"=== Scalping Toggle Request ===")
+        logger.info(f"Requested state: {request.enabled}")
+        logger.info(f"Current state before toggle: {trading_mode_manager.is_mode_active(TradingMode.SCALPING)}")
+        
         result = trading_mode_manager.toggle_mode(TradingMode.SCALPING, request.enabled)
         
         if result["success"]:
-            logger.info(f"Scalping mode {'enabled' if request.enabled else 'disabled'}")
+            logger.info(f"Toggle successful: {result}")
+            logger.info(f"New state after toggle: {trading_mode_manager.is_mode_active(TradingMode.SCALPING)}")
+            logger.info(f"Active modes: {[m.value for m in trading_mode_manager.get_active_modes()]}")
+        else:
+            logger.error(f"Toggle failed: {result}")
         
         return result
         
@@ -60,8 +68,16 @@ async def get_scalping_signal(
     スキャルピングエントリーシグナル取得
     """
     try:
+        # デバッグ用に全モードの状態を出力
+        all_modes_status = trading_mode_manager.get_status()
+        logger.info(f"All modes status: {all_modes_status}")
+        
         # スキャルピングモードがアクティブかチェック
-        if not trading_mode_manager.is_mode_active(TradingMode.SCALPING):
+        is_active = trading_mode_manager.is_mode_active(TradingMode.SCALPING)
+        scalping_config = trading_mode_manager.modes[TradingMode.SCALPING]
+        logger.info(f"Scalping mode check for {symbol}: is_active={is_active}, enabled={scalping_config.enabled}")
+        
+        if not is_active:
             return {
                 "signal": {
                     "action": "WAIT",
@@ -149,14 +165,36 @@ async def execute_scalping_entry(
         # 数量の小数点精度を調整（Bybitの要件に合わせて）
         quantity = position_size / signal["entry_price"]
         
-        # シンボルごとの精度調整
+        # シンボルごとの精度調整（Bybitの仕様に合わせて設定）
         precision_map = {
-            'BTCUSDT': 3,
-            'ETHUSDT': 3,
-            'default': 4
+            'BTCUSDT': 3,      # 0.001 BTC
+            'ETHUSDT': 3,      # 0.001 ETH
+            'BNBUSDT': 2,      # 0.01 BNB
+            'XRPUSDT': 0,      # 1 XRP（整数）
+            'SOLUSDT': 2,      # 0.01 SOL
+            'ADAUSDT': 0,      # 1 ADA（整数）
+            'MATICUSDT': 0,    # 1 MATIC（整数）
+            'DOTUSDT': 1,      # 0.1 DOT
+            'AVAXUSDT': 1,     # 0.1 AVAX
+            'LINKUSDT': 1,     # 0.1 LINK
+            'LTCUSDT': 2,      # 0.01 LTC
+            'ATOMUSDT': 1,     # 0.1 ATOM
+            'UNIUSDT': 1,      # 0.1 UNI
+            'NEARUSDT': 1,     # 0.1 NEAR
+            'FTMUSDT': 0,      # 1 FTM（整数）
+            'ALGOUSDT': 0,     # 1 ALGO（整数）
+            'VETUSDT': 0,      # 1 VET（整数）
+            'ICPUSDT': 1,      # 0.1 ICP
+            'FILUSDT': 1,      # 0.1 FIL
+            'DOGEUSDT': 0,     # 1 DOGE（整数）
+            'default': 2       # デフォルト: 0.01
         }
         precision = precision_map.get(symbol, precision_map['default'])
         quantity = round(quantity, precision)
+        
+        # 最小取引数量のチェック（整数精度の通貨は最低10単位）
+        if precision == 0 and quantity < 10:
+            quantity = 10
         
         # 高頻度取引最適化
         order_request = {
@@ -194,6 +232,7 @@ async def execute_scalping_entry(
                 # 高速利確システムセットアップ
                 await rapid_profit_system.setup_rapid_profit(
                     position_id,
+                    symbol,
                     signal["entry_price"],
                     order_request["quantity"],
                     signal["action"],
@@ -204,6 +243,7 @@ async def execute_scalping_entry(
                 # アグレッシブ損切りシステムセットアップ
                 await aggressive_stop_system.setup_aggressive_stops(
                     position_id,
+                    symbol,
                     signal["entry_price"],
                     signal["action"],
                     order_request["quantity"],
@@ -299,6 +339,10 @@ async def get_scalping_status() -> Dict:
         active_positions = positions_data.get('positions', {})
         hf_performance = hf_optimizer.get_performance_report()
         
+        # アクティブモードのリストを追加
+        active_modes = [mode.value for mode in trading_mode_manager.get_active_modes()]
+        mode_status['active_modes'] = active_modes
+        
         # 各ポジションの利確・損切り情報を追加
         positions_with_levels = []
         for position_id, position in active_positions.items():
@@ -316,9 +360,14 @@ async def get_scalping_status() -> Dict:
                 logger.warning(f"Failed to get stop levels for {position_id}: {e}")
                 stop_levels = []
             
+            # フロントエンドの期待するフィールド名に合わせる
             positions_with_levels.append({
                 **position,
                 "position_id": position_id,
+                "symbol": position.get('symbol', 'N/A'),
+                "direction": position.get('direction', 'N/A'),
+                "entry_price": position.get('entry_price', 0),
+                "quantity": position.get('position_size', 0),  # position_size を quantity にマッピング
                 "profit_targets": profit_levels,
                 "stop_levels": stop_levels
             })
@@ -340,7 +389,12 @@ async def clear_positions() -> Dict:
     ポジション情報をクリア（デバッグ用）
     """
     try:
-        # スキャルピングモードのポジションをクリア
+        from app.services.position_sync import position_sync_service
+        
+        # すべてのポジションをクリーンアップ
+        await position_sync_service.cleanup_all_positions()
+        
+        # trading_mode_managerのポジションリストも確実にクリア
         trading_mode_manager.active_positions[TradingMode.SCALPING] = []
         trading_mode_manager.active_positions[TradingMode.CONSERVATIVE] = []
         
@@ -358,6 +412,32 @@ async def clear_positions() -> Dict:
         
     except Exception as e:
         logger.error(f"Position clearing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/sync-positions")
+async def sync_positions() -> Dict:
+    """
+    ポジション情報を強制同期
+    """
+    try:
+        from app.services.position_sync import position_sync_service
+        
+        # 強制同期を実行
+        await position_sync_service.force_sync()
+        
+        # 同期後のポジション情報を取得
+        positions_data = rapid_profit_system.get_all_positions()
+        active_positions = positions_data.get('positions', {})
+        
+        return {
+            "success": True,
+            "message": "Positions synchronized successfully",
+            "active_positions": len(active_positions),
+            "positions": list(active_positions.values())
+        }
+        
+    except Exception as e:
+        logger.error(f"Position sync failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # シンプルなヘルパー関数

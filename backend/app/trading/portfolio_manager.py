@@ -50,6 +50,8 @@ class PortfolioManager:
         self.total_portfolio_value = 0.0
         self.total_risk_exposure = 0.0
         self.last_rebalance = datetime.now()
+        # 統合ポジション管理（position_id -> position info）
+        self.all_positions: Dict[str, Dict] = {}
         
         # 通貨グループ（相関の高い通貨）
         self.currency_groups = {
@@ -334,6 +336,73 @@ class PortfolioManager:
                         break
         
         return recommended
+    
+    def get_all_positions(self) -> Dict[str, Dict]:
+        """
+        全ポジション情報を取得（conservativeモードと統合）
+        """
+        # キャッシュをクリア
+        self.all_positions.clear()
+        
+        # rapid_profit_systemのポジション
+        from ..trading.scalping.rapid_profit_system import rapid_profit_system
+        for position_id, pos in rapid_profit_system.active_positions.items():
+            self.all_positions[position_id] = {
+                **pos,
+                'mode': 'scalping'
+            }
+        
+        # conservative_profit_systemのポジション
+        from ..trading.conservative.conservative_profit_system import conservative_profit_system
+        for position_id, pos in conservative_profit_system.active_positions.items():
+            self.all_positions[position_id] = {
+                **pos,
+                'mode': 'conservative'
+            }
+        
+        return self.all_positions
+    
+    async def reset_portfolio(self):
+        """
+        ポートフォリオをリセット（全ポジションをクリア）
+        手動取引後の状態不整合を解消するため
+        """
+        logger.warning("Resetting portfolio manager...")
+        
+        # ポートフォリオマネージャーの内部状態をクリア
+        self.positions.clear()
+        self.active_symbols.clear()
+        self.all_positions.clear()
+        self.total_portfolio_value = 0.0
+        self.total_risk_exposure = 0.0
+        self.last_rebalance = datetime.now()
+        
+        # rapid_profit_systemをクリア
+        from ..trading.scalping.rapid_profit_system import rapid_profit_system
+        rapid_profit_system.active_positions.clear()
+        rapid_profit_system.profit_targets.clear()
+        
+        # aggressive_stop_systemをクリア
+        from ..trading.scalping.aggressive_stop_system import aggressive_stop_system
+        aggressive_stop_system.active_positions.clear()
+        aggressive_stop_system.active_stops.clear()
+        
+        # conservative_profit_systemをクリア
+        from ..trading.conservative.conservative_profit_system import conservative_profit_system
+        conservative_profit_system.active_positions.clear()
+        conservative_profit_system.profit_targets.clear()
+        
+        # conservative_stop_systemをクリア
+        from ..trading.conservative.conservative_stop_system import conservative_stop_system
+        conservative_stop_system.active_positions.clear()
+        conservative_stop_system.active_stops.clear()
+        
+        # trading_mode_managerのポジションをクリア
+        from .modes.trading_mode_manager import trading_mode_manager, TradingMode
+        trading_mode_manager.active_positions[TradingMode.SCALPING] = []
+        trading_mode_manager.active_positions[TradingMode.CONSERVATIVE] = []
+        
+        logger.info("Portfolio manager reset completed")
 
 # グローバルインスタンス
 portfolio_manager = PortfolioManager()

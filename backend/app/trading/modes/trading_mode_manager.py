@@ -45,11 +45,11 @@ class TradingModeManager:
             ),
             TradingMode.SCALPING: ModeConfig(
                 name="スキャルピングモード", 
-                enabled=True,  # スキャルピングモードを有効に設定
-                max_positions=5,
-                position_size_percent=0.03,  # 3%
+                enabled=True,  # デフォルトを有効に変更
+                max_positions=30,  # 15→30に増加
+                position_size_percent=0.05,  # 2%→5%に引き上げ
                 min_interval_seconds=60,     # 1分
-                max_daily_trades=50,
+                max_daily_trades=100,  # 50→100に増加（ポジション数増加に対応）
                 risk_level=0.7
             )
         }
@@ -132,9 +132,14 @@ class TradingModeManager:
             self._reset_daily_counters()
             
             config = self.modes[mode]
+            logger.info(f"=== can_open_position check for {mode.value} ===")
+            logger.info(f"Config enabled: {config.enabled}")
+            logger.info(f"Mode name: {config.name}")
+            logger.info(f"All modes status: {[(m.value, self.modes[m].enabled) for m in TradingMode]}")
             
             # モードが無効
             if not config.enabled:
+                logger.warning(f"Mode {mode.value} is disabled!")
                 return {
                     "can_open": False,
                     "reason": f"{config.name}が無効です"

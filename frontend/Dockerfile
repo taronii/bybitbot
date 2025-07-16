@@ -13,7 +13,7 @@ RUN npm ci
 COPY . .
 
 # ビルド引数
-ARG REACT_APP_API_URL=http://localhost:8000
+ARG REACT_APP_API_URL=https://bybitbot-backend-elvv4omjba-an.a.run.app
 
 # 環境変数を設定
 ENV REACT_APP_API_URL=$REACT_APP_API_URL

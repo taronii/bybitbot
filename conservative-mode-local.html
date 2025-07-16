@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>慎重モード - Bybit Bot</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background-color: #2d3748;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background-color: #2d3748;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .button {
+            background-color: #3182ce;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background-color: #2563eb;
+        }
+        .button.danger {
+            background-color: #dc3545;
+        }
+        .button.danger:hover {
+            background-color: #c82333;
+        }
+        .positions {
+            background-color: #2d3748;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .position-item {
+            background-color: #374151;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .profit {
+            color: #10b981;
+        }
+        .loss {
+            color: #ef4444;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .success {
+            background-color: #10b981;
+        }
+        .error {
+            background-color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ 慎重モード - Bybit Bot</h1>
+            <p>安全第一の堅実取引モード（ローカル版）</p>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <div>アクティブポジション</div>
+                <div class="stat-value" id="activePositions">-</div>
+            </div>
+            <div class="stat-card">
+                <div>本日の取引数</div>
+                <div class="stat-value" id="dailyTrades">-</div>
+            </div>
+            <div class="stat-card">
+                <div>ポジションサイズ</div>
+                <div class="stat-value" id="positionSize">-</div>
+            </div>
+            <div class="stat-card">
+                <div>新規エントリー</div>
+                <div class="stat-value" id="canOpenNew">-</div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin: 20px 0;">
+            <button class="button" onclick="fetchStatus()">📊 ステータス更新</button>
+            <button class="button danger" onclick="resetPortfolio()">🔄 ポートフォリオリセット</button>
+        </div>
+
+        <div class="positions">
+            <h2>アクティブポジション</h2>
+            <div id="positionsList">
+                <p>ポジションなし</p>
+            </div>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8001';
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch(`${API_URL}/api/trading/conservative/status`);
+                const data = await response.json();
+                
+                // 統計情報を更新
+                document.getElementById('activePositions').textContent = 
+                    `${data.mode_status.active_positions} / ${data.mode_status.max_positions}`;
+                document.getElementById('dailyTrades').textContent = 
+                    `${data.mode_status.daily_trades} / ${data.mode_status.max_daily_trades}`;
+                document.getElementById('positionSize').textContent = 
+                    `${(data.mode_status.position_size_percent * 100).toFixed(1)}%`;
+                document.getElementById('canOpenNew').textContent = 
+                    data.mode_status.can_open_new ? '✅ 可能' : '❌ 不可';
+                
+                // ポジションリストを更新
+                const positionsList = document.getElementById('positionsList');
+                if (data.active_positions && data.active_positions.length > 0) {
+                    positionsList.innerHTML = data.active_positions.map(pos => `
+                        <div class="position-item">
+                            <div><strong>${pos.symbol}</strong> ${pos.direction}</div>
+                            <div>エントリー: $${pos.entry_price.toFixed(2)}</div>
+                            <div class="${pos.current_profit >= 0 ? 'profit' : 'loss'}">
+                                損益: ${pos.current_profit >= 0 ? '+' : ''}${pos.current_profit.toFixed(2)}%
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    positionsList.innerHTML = '<p>アクティブなポジションはありません</p>';
+                }
+                
+                showStatus('ステータスを更新しました', 'success');
+            } catch (error) {
+                showStatus('エラー: ' + error.message, 'error');
+            }
+        }
+
+        async function resetPortfolio() {
+            if (!confirm('ポートフォリオをリセットしますか？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/api/trading/portfolio/reset`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    showStatus('ポートフォリオをリセットしました', 'success');
+                    setTimeout(fetchStatus, 1000);
+                } else {
+                    showStatus('リセットに失敗しました', 'error');
+                }
+            } catch (error) {
+                showStatus('エラー: ' + error.message, 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+            statusDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // 初回読み込み
+        fetchStatus();
+        
+        // 5秒ごとに自動更新
+        setInterval(fetchStatus, 5000);
+    </script>
+</body>
+</html>

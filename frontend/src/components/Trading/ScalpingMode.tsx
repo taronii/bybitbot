@@ -127,10 +127,15 @@ const ScalpingMode: React.FC = () => {
   const [signals, setSignals] = useState<Record<string, ScalpingSignal | null>>({});
   const [performance, setPerformance] = useState<PerformanceSummary | null>(null);
   const [suggestions, setSuggestions] = useState<OptimizationSuggestion[]>([]);
-  const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set(['BTCUSDT']));
+  const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set([
+    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 
+    'ADAUSDT', 'MATICUSDT', 'DOTUSDT', 'AVAXUSDT', 'LINKUSDT',
+    'LTCUSDT', 'ATOMUSDT', 'UNIUSDT', 'NEARUSDT', 'FTMUSDT'
+  ]));
   const [alerts, setAlerts] = useState<Array<{ message: string; type: 'success' | 'error' | 'warning' }>>([]);
   const [executedSignals, setExecutedSignals] = useState<Set<string>>(new Set()); // 実行済みシグナル追跡
   const [activePositions, setActivePositions] = useState<PositionWithLevels[]>([]); // アクティブポジション
+  const [isInitialized, setIsInitialized] = useState(false); // 初期化フラグ
 
   // スキャルピング対象シンボル（高流動性銘柄）
   const scalpingSymbols = [
@@ -143,29 +148,81 @@ const ScalpingMode: React.FC = () => {
     'MATICUSDT',
     'DOTUSDT',
     'AVAXUSDT',
-    'LINKUSDT'
+    'LINKUSDT',
+    'LTCUSDT',     // ライトコイン
+    'ATOMUSDT',    // コスモス
+    'UNIUSDT',     // ユニスワップ
+    'NEARUSDT',    // ニア
+    'FTMUSDT',     // ファントム
+    'ALGOUSDT',    // アルゴランド
+    'VETUSDT',     // ヴィチェーン
+    'ICPUSDT',     // インターネットコンピュータ
+    'FILUSDT',     // ファイルコイン
+    'DOGEUSDT'     // ドージコイン
   ];
+
+  // 初期化時にサーバーの状態を取得
+  useEffect(() => {
+    const initializeScalpingMode = async () => {
+      if (!isInitialized) {
+        try {
+          console.log('Initializing scalping mode...');
+          const response = await apiService.get('/api/trading/scalping/status');
+          const statusData = response.data as any;
+          
+          if (statusData.mode_status) {
+            const isScalpingActive = statusData.mode_status.modes?.scalping?.enabled || false;
+            console.log('Initial scalping mode status from server:', isScalpingActive);
+            setScalpingEnabled(isScalpingActive);
+            
+            // 初期状態がtrueの場合、フラグを立てるだけ
+            // 実際のデータ取得は別のuseEffectで行う
+          }
+          setIsInitialized(true);
+        } catch (error) {
+          console.error('Failed to initialize scalping mode:', error);
+          setIsInitialized(true); // エラーでも初期化済みとする
+        }
+      }
+    };
+    
+    initializeScalpingMode();
+  }, [isInitialized]);
 
   useEffect(() => {
     // WebSocket接続のセットアップ
-    wsClient.connect();
+    try {
+      console.log('Setting up WebSocket connection for scalping mode...');
+      wsClient.connect();
 
-    wsClient.on('scalping_signal', (data: any) => {
-      if (selectedSymbols.has(data.symbol)) {
-        setSignals(prev => ({ ...prev, [data.symbol]: data.signal }));
-        if (data.signal.action !== 'WAIT' && data.signal.confidence > 0.75) {
-          addAlert(`スキャルピングシグナル: ${data.signal.action} ${data.symbol} (信頼度: ${(data.signal.confidence * 100).toFixed(1)}%)`, 'success');
+      const signalHandler = (data: any) => {
+        console.log('Received scalping signal:', data);
+        if (selectedSymbols.has(data.symbol)) {
+          setSignals(prev => ({ ...prev, [data.symbol]: data.signal }));
+          if (data.signal.action !== 'WAIT' && data.signal.confidence > 0.75) {
+            addAlert(`スキャルピングシグナル: ${data.signal.action} ${data.symbol} (信頼度: ${(data.signal.confidence * 100).toFixed(1)}%)`, 'success');
+          }
         }
-      }
-    });
+      };
 
-    wsClient.on('scalping_performance', (data: any) => {
-      setPerformance(data.performance);
-    });
+      const performanceHandler = (data: any) => {
+        console.log('Received scalping performance:', data);
+        setPerformance(data.performance);
+      };
 
-    return () => {
-      wsClient.disconnect();
-    };
+      wsClient.on('scalping_signal', signalHandler);
+      wsClient.on('scalping_performance', performanceHandler);
+
+      return () => {
+        console.log('Cleaning up WebSocket handlers...');
+        wsClient.off('scalping_signal', signalHandler);
+        wsClient.off('scalping_performance', performanceHandler);
+        // WebSocket接続は維持（他のコンポーネントでも使用するため）
+      };
+    } catch (error) {
+      console.error('WebSocket setup error:', error);
+      addAlert('WebSocket接続の設定に失敗しました', 'error');
+    }
   }, [selectedSymbols]);
 
   const addAlert = (message: string, type: 'success' | 'error' | 'warning') => {
@@ -176,22 +233,50 @@ const ScalpingMode: React.FC = () => {
   };
 
   const toggleScalpingMode = async () => {
+    console.log('=== toggleScalpingMode called ===');
+    console.log('Current scalpingEnabled:', scalpingEnabled);
+    console.log('Attempting to set to:', !scalpingEnabled);
+    
     try {
       const response = await apiService.post('/api/trading/scalping/toggle', {
         enabled: !scalpingEnabled
       });
       
+      console.log('Toggle API response:', response);
       const data = response.data as { success: boolean };
+      
       if (data.success) {
-        setScalpingEnabled(!scalpingEnabled);
+        const newEnabled = !scalpingEnabled;
+        console.log('Setting scalpingEnabled to:', newEnabled);
+        setScalpingEnabled(newEnabled);
+        
         addAlert(
-          !scalpingEnabled ? 'スキャルピングモードが起動しました' : 'スキャルピングモードが停止しました',
+          newEnabled ? 'スキャルピングモードが起動しました' : 'スキャルピングモードが停止しました',
           'success'
         );
+        
+        // スキャルピングモードが有効になったらシグナルを取得
+        if (newEnabled) {
+          // WebSocket接続を確立（既に接続済みの場合は何もしない）
+          if (!wsClient.isConnected()) {
+            console.log('WebSocket not connected, attempting to connect...');
+            wsClient.connect();
+          }
+          
+          console.log('Scheduling signal fetch in 1 second...');
+          setTimeout(() => {
+            console.log('Fetching signals and performance...');
+            fetchScalpingSignals();
+            fetchPerformance();
+          }, 1000);
+        }
+      } else {
+        console.error('Toggle API returned success: false', data);
       }
     } catch (error) {
       console.error('Failed to toggle scalping mode:', error);
       addAlert('スキャルピングモードの切り替えに失敗しました', 'error');
+      // エラーが発生してもモードの状態は維持
     }
   };
 
@@ -199,18 +284,27 @@ const ScalpingMode: React.FC = () => {
     setLoading(true);
     try {
       const promises = Array.from(selectedSymbols).map(async (symbol) => {
-        const response = await apiService.get(`/api/trading/scalping/signal/${symbol}`);
-        const data = response.data as { signal: ScalpingSignal };
-        return { symbol, signal: data.signal };
+        try {
+          const response = await apiService.get(`/api/trading/scalping/signal/${symbol}`);
+          const data = response.data as { signal: ScalpingSignal };
+          console.log(`Signal for ${symbol}:`, data); // デバッグログ
+          return { symbol, signal: data.signal };
+        } catch (error) {
+          console.error(`Failed to fetch signal for ${symbol}:`, error);
+          return { symbol, signal: null };
+        }
       });
       
       const results = await Promise.all(promises);
-      const newSignals: Record<string, ScalpingSignal> = {};
+      const newSignals: Record<string, ScalpingSignal | null> = {};
       
       results.forEach(({ symbol, signal }) => {
-        newSignals[symbol] = signal;
+        if (signal) {
+          newSignals[symbol] = signal;
+        }
       });
       
+      console.log('All signals:', newSignals); // デバッグログ
       setSignals(newSignals);
     } catch (error) {
       console.error('Failed to fetch scalping signals:', error);
@@ -221,6 +315,9 @@ const ScalpingMode: React.FC = () => {
   };
 
   const fetchPerformance = async () => {
+    console.log('=== fetchPerformance called ===');
+    console.log('Current scalpingEnabled state:', scalpingEnabled);
+    
     try {
       const [perfResponse, suggestionsResponse, statusResponse] = await Promise.all([
         apiService.get('/api/trading/scalping/performance'),
@@ -228,12 +325,35 @@ const ScalpingMode: React.FC = () => {
         apiService.get('/api/trading/scalping/status')
       ]);
       
+      console.log('Status response:', statusResponse.data);
+      
       setPerformance(perfResponse.data as PerformanceSummary);
       setSuggestions(suggestionsResponse.data as OptimizationSuggestion[]);
       
       // アクティブポジションを更新
-      const statusData = statusResponse.data as { active_positions: PositionWithLevels[] };
+      const statusData = statusResponse.data as any;
       setActivePositions(statusData.active_positions || []);
+      
+      // モードの状態をチェックして同期
+      // 注意: サーバー側の状態は参考程度に留め、フロントエンドの状態を優先する
+      if (statusData.mode_status) {
+        console.log('Full mode_status:', statusData.mode_status);
+        const isScalpingActive = statusData.mode_status.active_modes?.includes('SCALPING') || 
+                                 statusData.mode_status.active_modes?.includes('scalping') || false;
+        console.log('Server scalping mode status:', isScalpingActive, 'Local status:', scalpingEnabled);
+        
+        // デバッグ: mode_statusの詳細を確認
+        if (statusData.mode_status.modes) {
+          console.log('Scalping mode details:', statusData.mode_status.modes.scalping);
+        }
+        
+        // サーバーとローカルの状態が異なる場合は警告のみ
+        if (isScalpingActive !== scalpingEnabled) {
+          console.warn('Mode status mismatch - Server:', isScalpingActive, 'Local:', scalpingEnabled);
+          console.warn('This should NOT change the local state');
+          // 自動同期は行わない（ユーザーの操作を優先）
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch performance data:', error);
     }
@@ -288,10 +408,49 @@ const ScalpingMode: React.FC = () => {
   };
 
   useEffect(() => {
+    // 初回のパフォーマンスデータ取得
     fetchPerformance();
-    const interval = setInterval(fetchPerformance, 30000); // 30秒ごと
-    return () => clearInterval(interval);
-  }, []);
+    
+    // スキャルピングモードが有効な場合のみ定期更新
+    let interval: NodeJS.Timeout | null = null;
+    if (scalpingEnabled) {
+      interval = setInterval(fetchPerformance, 30000); // 30秒ごと
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [scalpingEnabled]); // scalpingEnabledの変更を監視
+
+  // スキャルピングモードが有効になったときの処理
+  useEffect(() => {
+    console.log('=== useEffect [scalpingEnabled] triggered ===');
+    console.log('ScalpingMode enabled state changed to:', scalpingEnabled);
+    
+    if (scalpingEnabled) {
+      console.log('Scalping mode is ENABLED, setting up timers...');
+      // 少し遅延させてからシグナルを取得
+      const timer = setTimeout(() => {
+        console.log('Initial fetch timer fired');
+        fetchScalpingSignals();
+        fetchPerformance();
+      }, 1000);
+      
+      // 定期的な更新を設定
+      const signalInterval = setInterval(() => {
+        console.log('Signal interval timer fired');
+        fetchScalpingSignals();
+      }, 10000); // 10秒ごと
+      
+      return () => {
+        console.log('Cleaning up scalping mode timers');
+        clearTimeout(timer);
+        clearInterval(signalInterval);
+      };
+    } else {
+      console.log('Scalping mode is DISABLED');
+    }
+  }, [scalpingEnabled]);
 
   // 自動実行機能
   useEffect(() => {
@@ -300,7 +459,7 @@ const ScalpingMode: React.FC = () => {
     const autoExecuteInterval = setInterval(() => {
       // 各シグナルをチェックして自動実行
       Object.entries(signals).forEach(([symbol, signal]) => {
-        if (signal && signal.action !== 'WAIT' && signal.confidence >= 0.45) {
+        if (signal && signal.action !== 'WAIT' && signal.confidence >= 0.35) { // 閾値を0.45から0.35に下げて、より多くのエントリー機会を確保
           const signalKey = `${symbol}-${signal.metadata.timestamp}`;
           // まだ実行されていないシグナルのみ実行
           if (!executedSignals.has(signalKey)) {
@@ -314,28 +473,9 @@ const ScalpingMode: React.FC = () => {
     return () => clearInterval(autoExecuteInterval);
   }, [autoTradeEnabled, scalpingEnabled, signals, executedSignals]);
 
-  // シグナル自動取得
-  useEffect(() => {
-    if (!scalpingEnabled) return;
-
-    // 初回取得
-    fetchScalpingSignals();
-    fetchPerformance();
-
-    // 定期的に更新
-    const signalInterval = setInterval(() => {
-      fetchScalpingSignals();
-    }, 10000); // 10秒ごとに短縮
-
-    const performanceInterval = setInterval(() => {
-      fetchPerformance();
-    }, 5000); // 5秒ごとにポジション状態を更新
-
-    return () => {
-      clearInterval(signalInterval);
-      clearInterval(performanceInterval);
-    };
-  }, [scalpingEnabled, selectedSymbols]);
+  // この重複したuseEffectを削除（既に上で同じ処理を行っている）
+  // 削除理由: 上記のuseEffect（行383-410）と重複しており、
+  // 複数回fetchPerformanceが呼ばれる原因となっている
 
   return (
     <Box>
@@ -461,7 +601,27 @@ const ScalpingMode: React.FC = () => {
                   <TableBody>
                     {Array.from(selectedSymbols).map((symbol) => {
                       const signal = signals[symbol];
-                      if (!signal) return null;
+                      if (!signal) {
+                        // シグナルがない場合は待機状態を表示
+                        return (
+                          <TableRow key={symbol}>
+                            <TableCell>{symbol}</TableCell>
+                            <TableCell>
+                              <Chip label="WAIT" color="default" size="small" icon={<TimerIcon />} />
+                            </TableCell>
+                            <TableCell>-</TableCell>
+                            <TableCell>-</TableCell>
+                            <TableCell>-</TableCell>
+                            <TableCell>-</TableCell>
+                            <TableCell>-</TableCell>
+                            <TableCell>
+                              <Typography variant="body2" color="textSecondary">
+                                データ取得中...
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
                       
                       return (
                         <TableRow key={symbol}>
@@ -549,9 +709,57 @@ const ScalpingMode: React.FC = () => {
         {activePositions.length > 0 && (
           <Card>
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                アクティブポジション
-              </Typography>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="h6">
+                  アクティブポジション
+                </Typography>
+                <Box>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://bybitbot-backend-elvv4omjba-an.a.run.app'}/api/trading/scalping/sync-positions`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' }
+                        });
+                        if (response.ok) {
+                          await fetchPerformance();
+                          alert('ポジション情報を同期しました');
+                        }
+                      } catch (error) {
+                        console.error('Sync failed:', error);
+                      }
+                    }}
+                    sx={{ mr: 1 }}
+                  >
+                    同期
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    onClick={async () => {
+                      if (window.confirm('すべてのポジション情報をクリアしますか？')) {
+                        try {
+                          const response = await fetch(`${process.env.REACT_APP_API_URL || 'https://bybitbot-backend-elvv4omjba-an.a.run.app'}/api/trading/scalping/clear-positions`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                          });
+                          if (response.ok) {
+                            await fetchPerformance();
+                            alert('ポジション情報をクリアしました');
+                          }
+                        } catch (error) {
+                          console.error('Clear failed:', error);
+                        }
+                      }
+                    }}
+                  >
+                    クリア
+                  </Button>
+                </Box>
+              </Box>
               
               <TableContainer>
                 <Table size="small">

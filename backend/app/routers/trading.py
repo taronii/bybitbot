@@ -14,6 +14,7 @@ from ..trading.entry_executor import SmartEntryExecutor
 from ..trading.portfolio_manager import portfolio_manager, PortfolioPosition
 from ..services.bybit_client import get_bybit_client
 from ..models import BybitClient
+from ..trading.modes.trading_mode_manager import trading_mode_manager, TradingMode
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,54 @@ async def execute_entry(
                 entry_time=datetime.now()
             )
             portfolio_manager.add_position(position)
+            
+            # 慎重モードの場合、専用の利確・損切りシステムを設定
+            if trading_mode_manager.is_mode_active(TradingMode.CONSERVATIVE):
+                from ..trading.conservative.conservative_profit_system import conservative_profit_system
+                from ..trading.conservative.conservative_stop_system import conservative_stop_system
+                
+                position_id = f"conservative_{symbol}_{datetime.now().timestamp()}"
+                
+                # 利確システムの設定
+                await conservative_profit_system.setup_conservative_profit(
+                    position_id=position_id,
+                    symbol=symbol,
+                    entry_price=result["entry_price"],
+                    position_size=result["position_size"],
+                    direction=signal["action"],
+                    stop_loss=signal["stop_loss"],
+                    confidence=signal["confidence"]
+                )
+                
+                # 損切りシステムの設定
+                await conservative_stop_system.setup_conservative_stops(
+                    position_id=position_id,
+                    symbol=symbol,
+                    entry_price=result["entry_price"],
+                    direction=signal["action"],
+                    position_size=result["position_size"],
+                    initial_stop_loss=signal["stop_loss"],
+                    confidence=signal["confidence"]
+                )
+                
+                # ポジション情報を更新
+                position_info = {
+                    "symbol": symbol,
+                    "direction": signal["action"],
+                    "entry_price": result["entry_price"],
+                    "quantity": result["position_size"],
+                    "position_id": position_id,
+                    "signal_confidence": signal["confidence"],
+                    "expected_duration": 1440,  # 24時間（慎重モード）
+                    "mode": "conservative"
+                }
+                
+                # trading_mode_managerに登録
+                trading_mode_manager.register_position(TradingMode.CONSERVATIVE, position_info)
+                
+                # position_syncを強制実行して即座に同期
+                from ..services.position_sync import position_sync_service
+                await position_sync_service.force_sync()
         
         # 結果をシリアライズ可能な形式に変換
         result_dict = result
@@ -442,4 +491,32 @@ async def get_multi_symbol_signals(
         
     except Exception as e:
         logger.error(f"Failed to get multi-symbol signals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/portfolio/reset")
+async def reset_portfolio() -> Dict:
+    """
+    ポートフォリオをリセット（手動取引後の状態不整合を解消）
+    """
+    try:
+        logger.warning("Portfolio reset requested")
+        
+        # ポートフォリオマネージャーをリセット
+        await portfolio_manager.reset_portfolio()
+        
+        # position_syncサービスで全ポジションをクリーンアップ
+        from ..services.position_sync import position_sync_service
+        await position_sync_service.cleanup_all_positions()
+        
+        # 強制的に同期を実行
+        await position_sync_service.force_sync()
+        
+        return {
+            "status": "success",
+            "message": "ポートフォリオがリセットされました",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to reset portfolio: {e}")
         raise HTTPException(status_code=500, detail=str(e))

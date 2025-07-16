@@ -38,6 +38,7 @@ import { apiService } from '../../services/api';
 import { wsClient } from '../../services/websocket';
 import ScalpingMode from './ScalpingMode';
 import MultiSymbolTrading from './MultiSymbolTrading';
+import ConservativeMode from './ConservativeMode';
 
 interface EntrySignal {
   action: 'BUY' | 'SELL' | 'WAIT';
@@ -320,8 +321,11 @@ const Trading: React.FC = () => {
 
       {/* タブコンテンツ */}
       {currentTab === 0 && (
+        <ConservativeMode />
+      )}
+
+      {currentTab === 0 && false && (
         <>
-          {/* アラート表示 */}
           <Stack spacing={1} sx={{ mb: 3 }}>
             {alerts.map((alert) => (
               <Alert key={alert.id} severity={alert.type}>

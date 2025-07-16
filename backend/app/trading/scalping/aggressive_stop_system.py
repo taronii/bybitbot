@@ -62,12 +62,16 @@ class AggressiveStopSystem:
         self.risk_metrics: Dict[str, RiskMetrics] = {}
         self.stop_configs: Dict[str, AggressiveStopConfig] = {}
         
+        # ポジション情報管理
+        self.active_positions: Dict[str, Dict] = {}
+        
         # 緊急停止フラグ
         self.emergency_mode: Dict[str, bool] = {}
         
     async def setup_aggressive_stops(
         self,
         position_id: str,
+        symbol: str,
         entry_price: float,
         direction: str,
         position_size: float,
@@ -81,6 +85,8 @@ class AggressiveStopSystem:
         -----------
         position_id : str
             ポジションID
+        symbol : str
+            シンボル（例: 'BTCUSDT'）
         entry_price : float
             エントリー価格
         direction : str
@@ -97,6 +103,15 @@ class AggressiveStopSystem:
         Dict : 設定結果
         """
         try:
+            # ポジション情報を保存
+            self.active_positions[position_id] = {
+                'symbol': symbol,
+                'entry_price': entry_price,
+                'direction': direction,
+                'position_size': position_size,
+                'entry_time': datetime.now()
+            }
+            
             # 信頼度と期間に基づく設定調整
             config = await self._create_custom_config(confidence, expected_duration)
             self.stop_configs[position_id] = config
@@ -569,6 +584,8 @@ class AggressiveStopSystem:
                 del self.stop_configs[position_id]
             if position_id in self.emergency_mode:
                 del self.emergency_mode[position_id]
+            if position_id in self.active_positions:
+                del self.active_positions[position_id]
             if hasattr(self, '_position_start_times') and position_id in self._position_start_times:
                 del self._position_start_times[position_id]
             
@@ -601,51 +618,68 @@ class AggressiveStopSystem:
     def get_stop_levels(self, position_id: str) -> List[Dict]:
         """ポジションの損切りレベルを取得"""
         levels = self.active_stops.get(position_id, [])
+        position = self.active_positions.get(position_id, {})
         result = []
+        
+        if not position:
+            return result
+        
+        entry_price = position.get('entry_price', 0)
+        direction = position.get('direction', 'BUY')
         
         for level in levels:
             if level.is_active:
+                # 損失率を計算
+                if direction == 'BUY':
+                    loss_rate = ((entry_price - level.stop_price) / entry_price) * 100
+                else:
+                    loss_rate = ((level.stop_price - entry_price) / entry_price) * 100
+                
                 result.append({
                     "price": level.stop_price,
                     "name": level.level_name,
                     "trigger_conditions": level.trigger_conditions,
                     "priority": level.priority,
-                    "description": f"{level.level_name}: {level.stop_price:.2f}"
+                    "loss_rate": loss_rate,
+                    "description": f"{level.level_name}: {level.stop_price:.2f} (損失率 -{loss_rate:.2f}%)"
                 })
         
         # 設定からの追加情報
-        if position_id in self.stop_configs:
+        if position_id in self.stop_configs and entry_price > 0:
             config = self.stop_configs[position_id]
-            position = self.active_positions.get(position_id, {})
-            entry_price = position.get('entry_price', 0)
             
-            if entry_price > 0:
-                # 初期ストップ
-                if position.get('direction') == 'BUY':
-                    initial_stop = entry_price * (1 - config.initial_stop_distance / 100)
-                else:
-                    initial_stop = entry_price * (1 + config.initial_stop_distance / 100)
-                
+            # 初期ストップ
+            if direction == 'BUY':
+                initial_stop = entry_price * (1 - config.initial_stop_distance / 100)
+            else:
+                initial_stop = entry_price * (1 + config.initial_stop_distance / 100)
+            
+            # 既存のレベルと重複していない場合のみ追加
+            if not any(abs(level.stop_price - initial_stop) < 0.01 for level in levels if level.is_active):
                 result.append({
                     "price": initial_stop,
                     "name": "初期ストップ",
                     "trigger_conditions": ["価格"],
                     "priority": 1,
-                    "description": f"初期ストップ: {initial_stop:.2f} (-{config.initial_stop_distance:.1f}%)"
+                    "loss_rate": config.initial_stop_distance,
+                    "description": f"初期ストップ: {initial_stop:.2f} (損失率 -{config.initial_stop_distance:.2f}%)"
                 })
-                
-                # 緊急ストップ
-                if position.get('direction') == 'BUY':
-                    emergency_stop = entry_price * (1 - config.emergency_stop_percent / 100)
-                else:
-                    emergency_stop = entry_price * (1 + config.emergency_stop_percent / 100)
-                
+            
+            # 緊急ストップ
+            if direction == 'BUY':
+                emergency_stop = entry_price * (1 - config.emergency_stop_percent / 100)
+            else:
+                emergency_stop = entry_price * (1 + config.emergency_stop_percent / 100)
+            
+            # 既存のレベルと重複していない場合のみ追加
+            if not any(abs(level.stop_price - emergency_stop) < 0.01 for level in levels if level.is_active):
                 result.append({
                     "price": emergency_stop,
                     "name": "緊急ストップ",
                     "trigger_conditions": ["緊急事態"],
                     "priority": 0,
-                    "description": f"緊急ストップ: {emergency_stop:.2f} (-{config.emergency_stop_percent:.1f}%)"
+                    "loss_rate": config.emergency_stop_percent,
+                    "description": f"緊急ストップ: {emergency_stop:.2f} (損失率 -{config.emergency_stop_percent:.2f}%)"
                 })
         
         return sorted(result, key=lambda x: x['priority'])

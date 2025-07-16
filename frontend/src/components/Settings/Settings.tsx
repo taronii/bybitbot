@@ -36,7 +36,7 @@ const Settings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -81,13 +81,19 @@ const Settings: React.FC = () => {
     setTesting(true);
     setTestResult(null);
     try {
-      // APIシークレットが空の場合は、そのまま空文字列を送信（バックエンドで既存の値を使用）
-      const response = await apiService.post<{ success: boolean; message: string }>('/api/settings/test', settings);
-      setTestResult(response.data);
+      // API接続テストを実行
+      const result = await apiService.testApiConnection(settings);
+      setTestResult(result);
+      
+      // デバッグ情報をコンソールに出力（タブレットでのデバッグ用）
+      if (!result.success && result.details) {
+        console.error('Connection test failed with details:', result.details);
+      }
     } catch (error: any) {
+      console.error('Unexpected error during connection test:', error);
       setTestResult({ 
         success: false, 
-        message: error.response?.data?.detail || '接続テストに失敗しました' 
+        message: '予期しないエラーが発生しました。コンソールログを確認してください。' 
       });
     } finally {
       setTesting(false);
@@ -210,6 +216,48 @@ const Settings: React.FC = () => {
               <Typography variant="body2">
                 {testResult.message}
               </Typography>
+              
+              {/* タブレット用の追加情報 */}
+              {!testResult.success && /iPad|Android/i.test(navigator.userAgent) && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" display="block" sx={{ fontStyle: 'italic' }}>
+                    タブレットでの接続に関する注意:
+                  </Typography>
+                  <Typography component="ul" sx={{ pl: 2, mt: 0.5 }}>
+                    <Typography component="li" variant="caption">
+                      ブラウザがサイトへのアクセスを許可しているか確認してください
+                    </Typography>
+                    <Typography component="li" variant="caption">
+                      プライベートブラウジングモードを無効にしてください
+                    </Typography>
+                    <Typography component="li" variant="caption">
+                      Wi-Fi接続を確認し、必要に応じて再接続してください
+                    </Typography>
+                    <Typography component="li" variant="caption">
+                      APIキーとシークレットキーが正しく入力されているか確認してください
+                    </Typography>
+                  </Typography>
+                </Box>
+              )}
+              
+              {/* デバッグ情報の表示 */}
+              {!testResult.success && testResult.details && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="caption" display="block" sx={{ fontWeight: 'bold' }}>
+                    デバッグ情報:
+                  </Typography>
+                  <Typography variant="caption" component="pre" sx={{ 
+                    whiteSpace: 'pre-wrap', 
+                    wordBreak: 'break-word',
+                    bgcolor: 'grey.100',
+                    p: 1,
+                    borderRadius: 1,
+                    fontSize: '0.7rem'
+                  }}>
+                    {JSON.stringify(testResult.details, null, 2)}
+                  </Typography>
+                </Box>
+              )}
             </Alert>
           )}
 

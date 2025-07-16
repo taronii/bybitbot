@@ -57,6 +57,7 @@ class RapidProfitSystem:
     async def setup_rapid_profit(
         self,
         position_id: str,
+        symbol: str,
         entry_price: float,
         position_size: float,
         direction: str,
@@ -70,6 +71,8 @@ class RapidProfitSystem:
         -----------
         position_id : str
             ポジションID
+        symbol : str
+            シンボル（例: 'BTCUSDT'）
         entry_price : float
             エントリー価格
         position_size : float
@@ -88,6 +91,7 @@ class RapidProfitSystem:
         try:
             # ポジション情報を記録
             self.active_positions[position_id] = {
+                'symbol': symbol,
                 'entry_price': entry_price,
                 'position_size': position_size,
                 'direction': direction,
@@ -515,16 +519,30 @@ class RapidProfitSystem:
     def get_profit_targets(self, position_id: str) -> List[Dict]:
         """ポジションの利確ターゲットを取得"""
         targets = self.profit_targets.get(position_id, [])
+        position = self.active_positions.get(position_id, {})
         result = []
+        
+        if not position:
+            return result
+        
+        entry_price = position.get('entry_price', 0)
+        direction = position.get('direction', 'BUY')
         
         for target in targets:
             if target.is_active:
+                # 利益率を計算
+                if direction == 'BUY':
+                    profit_rate = ((target.target_price - entry_price) / entry_price) * 100
+                else:
+                    profit_rate = ((entry_price - target.target_price) / entry_price) * 100
+                
                 result.append({
                     "price": target.target_price,
                     "percentage": target.percentage,
                     "type": target.trigger_type,
                     "priority": target.priority,
-                    "description": f"利確レベル{target.priority}: {target.target_price:.2f} ({target.percentage*100:.0f}%)"
+                    "profit_rate": profit_rate,
+                    "description": f"利確レベル{target.priority}: {target.target_price:.2f} (利益率 {profit_rate:.2f}%, 決済比率 {target.percentage*100:.0f}%)"
                 })
         
         return result

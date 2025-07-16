@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bybit Bot リセット (ローカル版)</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        button {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #c82333;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .success {
+            background-color: #28a745;
+        }
+        .error {
+            background-color: #dc3545;
+        }
+        .warning {
+            background-color: #ff9800;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        h1 {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 Bybit Bot ポートフォリオリセット</h1>
+    <h2 style="text-align: center; color: #ff9800;">ローカル版</h2>
+    
+    <div class="warning">
+        <h3>⚠️ 注意事項</h3>
+        <p>このページはローカルサーバー（localhost:8001）に接続します。</p>
+        <p>バックエンドサーバーが起動している必要があります。</p>
+    </div>
+    
+    <button onclick="resetPortfolio()">
+        🔄 ポートフォリオをリセット（ローカル）
+    </button>
+    
+    <div id="result" class="result"></div>
+    
+    <script>
+        function resetPortfolio() {
+            if (!confirm('ポートフォリオをリセットしますか？')) {
+                return;
+            }
+            
+            const resultDiv = document.getElementById('result');
+            const button = document.querySelector('button');
+            
+            resultDiv.style.display = 'none';
+            button.disabled = true;
+            button.textContent = '🔄 リセット中...';
+            
+            fetch('http://localhost:8001/api/trading/portfolio/reset', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.style.display = 'block';
+                if (data.status === 'success') {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = '✅ リセット完了！<br>新しいエントリーが可能になりました。<br><br>時刻: ' + new Date().toLocaleString('ja-JP');
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = '❌ リセット失敗';
+                }
+            })
+            .catch(error => {
+                resultDiv.style.display = 'block';
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '❌ エラー: ' + error.message + '<br><br>ローカルサーバーが起動していることを確認してください。';
+            })
+            .finally(() => {
+                button.disabled = false;
+                button.textContent = '🔄 ポートフォリオをリセット（ローカル）';
+            });
+        }
+    </script>
+</body>
+</html>

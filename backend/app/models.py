@@ -97,3 +97,44 @@ class BybitClient:
             return {}
         except:
             return {}
+    
+    async def get_positions(self, symbol: str = None):
+        """アクティブポジションを取得"""
+        try:
+            params = {
+                "category": "linear",
+                "settleCoin": "USDT"
+            }
+            if symbol:
+                params["symbol"] = symbol
+                
+            response = self.session.get_positions(**params)
+            
+            if response.get('retCode') == 0:
+                positions = response.get('result', {}).get('list', [])
+                # サイズが0でないポジションのみ返す
+                active_positions = [pos for pos in positions if float(pos.get('size', 0)) > 0]
+                return active_positions
+            return []
+        except Exception as e:
+            print(f"Error getting positions: {e}")
+            return []
+    
+    async def get_open_orders(self, symbol: str = None):
+        """未約定注文を取得"""
+        try:
+            params = {
+                "category": "linear",
+                "settleCoin": "USDT"
+            }
+            if symbol:
+                params["symbol"] = symbol
+                
+            response = self.session.get_open_orders(**params)
+            
+            if response.get('retCode') == 0:
+                return response.get('result', {}).get('list', [])
+            return []
+        except Exception as e:
+            print(f"Error getting open orders: {e}")
+            return []
